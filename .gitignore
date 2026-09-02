@@ -23,9 +23,15 @@ env/
 .DS_Store
 Thumbs.db
 
+# Databases
+*.db
+*.sqlite
+*.sqlite3
+
 # ML artifacts
 ml/models/*.joblib
 ml/models/*.json
+ml/models/*.csv
 ml/data/*.csv
 !ml/data/.gitkeep
 

@@ -119,7 +119,7 @@ def main() -> None:
     # ── Load data ────────────────────────────────────────────────
     print(f"\n1. Loading data from {args.data}...")
     df = pd.read_csv(args.data)
-    df["timestamp"] = pd.to_datetime(df["timestamp"])
+    df["timestamp"] = pd.to_datetime(df["timestamp"], format="mixed")
     print(f"   Loaded {len(df):,} transactions")
     print(f"   Suspicious: {df['is_suspicious'].sum():,} ({df['is_suspicious'].mean()*100:.1f}%)")
 
@@ -145,7 +145,7 @@ def main() -> None:
     train_features = extract_features_batch(train_df, sample_rate=args.sample_rate)
 
     print("   Validation set...")
-    val_features = extract_features_batch(val_df, sample_rate=1.0)
+    val_features = extract_features_batch(val_df, sample_rate=args.sample_rate)
 
     # DO NOT extract test features here — only during evaluation
 
@@ -197,7 +197,7 @@ def main() -> None:
     model_version = f"v1.0.0"
     model_path = output_dir / "xgboost_fraud.joblib"
     joblib.dump(model, model_path)
-    print(f"   ✓ Model saved to {model_path}")
+    print(f"   [+] Model saved to {model_path}")
 
     # Save metadata
     metadata = {
@@ -228,14 +228,14 @@ def main() -> None:
     }
 
     meta_path = output_dir / "model_metadata.json"
-    with open(meta_path, "w") as f:
+    with open(meta_path, "w", encoding="utf-8") as f:
         json.dump(metadata, f, indent=2)
-    print(f"   ✓ Metadata saved to {meta_path}")
+    print(f"   [+] Metadata saved to {meta_path}")
 
     # Save test set for later evaluation (features NOT extracted yet)
     test_path = output_dir / "test_set.csv"
     test_df.to_csv(test_path, index=False)
-    print(f"   ✓ Held-out test set saved to {test_path}")
+    print(f"   [+] Held-out test set saved to {test_path}")
 
     print("\n" + "=" * 60)
     print("Training complete. Run `python -m ml.evaluate` for final evaluation.")

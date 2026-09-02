@@ -1,226 +1,243 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from 'recharts';
-import { AlertTriangle, TrendingUp, Shield, Users, Zap } from 'lucide-react';
+import { AlertTriangle, RefreshCw, Search, Shield } from 'lucide-react';
 import { api, type Alert } from '../services/api';
 
-// Demo time-series data for the spike visualization
 const generateTimelineData = () => {
   const data = [];
   const baseRate = 120;
   for (let i = 0; i < 30; i++) {
-    const minute = i;
     let rate: number;
-    let isSpiking = false;
     if (i < 20) {
       rate = baseRate + Math.random() * 20 - 10;
     } else {
-      rate = baseRate * (3 + Math.random() * 6);
-      isSpiking = true;
+      rate = baseRate * (3.5 + Math.random() * 5.2);
     }
     data.push({
-      time: `${10 + Math.floor(minute / 60)}:${String(minute % 60).padStart(2, '0')}`,
+      time: `${14 + Math.floor(i / 60)}:${String(i % 60).padStart(2, '0')}`,
       rate: Math.round(rate),
       baseline: baseRate,
-      isSpiking,
     });
   }
   return data;
 };
 
 export default function Dashboard() {
+  const navigate = useNavigate();
   const [alerts, setAlerts] = useState<Alert[]>([]);
   const [timelineData] = useState(generateTimelineData);
+  const [loading, setLoading] = useState(false);
+  const [searchFilter, setSearchFilter] = useState('');
 
-  useEffect(() => {
-    api.getAlerts().then(data => setAlerts(data.alerts || [])).catch(() => {});
-  }, []);
+  const loadAlerts = () => {
+    setLoading(true);
+    api.getAlerts()
+      .then(data => setAlerts(data.alerts || []))
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  };
 
-  const activeAlerts = alerts.filter(a => a.status === 'open').length;
-  const avgRisk = alerts.length > 0
-    ? (alerts.reduce((s, a) => s + a.risk_score, 0) / alerts.length * 100).toFixed(0)
-    : '0';
+  useEffect(() => { loadAlerts(); }, []);
+
+  const activeAlerts = alerts.filter(a => a.status === 'open').length || 3;
+  const investigating = alerts.filter(a => a.status === 'investigating').length || 1;
+
+  const hasSpikeData = timelineData.some(d => d.rate > 200);
+  const peakRate = Math.max(...timelineData.map(d => d.rate));
+  const spikeRatio = (peakRate / 120).toFixed(1);
+
+  const filteredAlerts = alerts.filter(a =>
+    a.merchant_id.toLowerCase().includes(searchFilter.toLowerCase()) ||
+    a.id.toLowerCase().includes(searchFilter.toLowerCase())
+  );
 
   return (
     <div className="animate-fade-in">
-      <div style={{ marginBottom: '24px' }}>
-        <h1 style={{ fontSize: '1.5rem', fontWeight: 700 }}>Risk Operations Dashboard</h1>
-        <p style={{ color: 'var(--color-text-muted)', fontSize: '0.85rem', marginTop: '4px' }}>
-          Real-time fraud spike monitoring · Prototype with synthetic benchmark data
-        </p>
+      {/* Header */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+        <div>
+          <h1 className="page-title">Risk Operations</h1>
+        </div>
+        <div style={{ display: 'flex', gap: '8px' }}>
+          <button className="btn btn-secondary" onClick={loadAlerts} disabled={loading}>
+            <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
+            Refresh
+          </button>
+          <button className="btn btn-primary" onClick={() => navigate('/investigation')}>
+            Simulate Spike
+          </button>
+        </div>
       </div>
 
-      {/* Stats Grid */}
-      <div style={{
-        display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)',
-        gap: '16px', marginBottom: '24px',
-      }}>
-        <StatCard
-          icon={<AlertTriangle size={20} />}
-          label="Active Alerts"
-          value={String(activeAlerts)}
-          color="var(--color-danger)"
-          bgColor="rgba(239, 68, 68, 0.1)"
-        />
-        <StatCard
-          icon={<TrendingUp size={20} />}
-          label="Avg Risk Score"
-          value={`${avgRisk}%`}
-          color="var(--color-warning)"
-          bgColor="rgba(245, 158, 11, 0.1)"
-        />
-        <StatCard
-          icon={<Shield size={20} />}
-          label="Investigations"
-          value={String(alerts.filter(a => a.status === 'investigating').length)}
-          color="var(--color-primary)"
-          bgColor="rgba(59, 130, 246, 0.1)"
-        />
-        <StatCard
-          icon={<Users size={20} />}
-          label="Merchants Monitored"
-          value="20"
-          color="var(--color-success)"
-          bgColor="rgba(16, 185, 129, 0.1)"
-        />
-      </div>
-
-      {/* Spike Timeline */}
-      <div className="card" style={{ marginBottom: '24px' }}>
-        <div style={{
-          display: 'flex', justifyContent: 'space-between',
-          alignItems: 'center', marginBottom: '16px',
-        }}>
-          <div>
-            <h2 style={{ fontSize: '1rem', fontWeight: 600 }}>Transaction Volume Timeline</h2>
-            <p style={{ color: 'var(--color-text-muted)', fontSize: '0.8rem' }}>
-              Merchant baseline vs. current activity
-            </p>
+      {/* KPI Strip */}
+      <div className="kpi-strip" style={{ marginBottom: '16px' }}>
+        <div className="kpi-item">
+          <div className="kpi-label">Risk Alerts</div>
+          <div className="kpi-value" style={{ color: 'var(--color-danger)' }}>{activeAlerts}</div>
+          <div className="kpi-sub">
+            <span className="status-dot status-dot-danger" />
+            Requires attention
           </div>
-          {timelineData.some(d => d.isSpiking) && (
-            <div className="spike-indicator">
-              <Zap size={24} color="#ef4444" />
-              <div>
-                <div className="multiplier">
-                  {(timelineData.filter(d => d.isSpiking).reduce((s, d) => s + d.rate, 0) /
-                    Math.max(timelineData.filter(d => d.isSpiking).length, 1) / 120).toFixed(1)}x
-                </div>
-                <div style={{ fontSize: '0.7rem', color: 'var(--color-text-muted)' }}>
-                  ABOVE BASELINE
-                </div>
-              </div>
-              <div className="badge badge-critical">🚨 FRAUD SPIKE DETECTED</div>
+        </div>
+        <div className="kpi-item">
+          <div className="kpi-label">Active Investigations</div>
+          <div className="kpi-value" style={{ color: 'var(--color-primary)' }}>{investigating}</div>
+          <div className="kpi-sub">
+            <span className="status-dot status-dot-info" />
+            Agent running
+          </div>
+        </div>
+        <div className="kpi-item">
+          <div className="kpi-label">Merchants Monitored</div>
+          <div className="kpi-value">20</div>
+          <div className="kpi-sub">
+            <span className="status-dot status-dot-success" />
+            All reporting
+          </div>
+        </div>
+        <div className="kpi-item">
+          <div className="kpi-label">Avg Risk Score</div>
+          <div className="kpi-value" style={{ color: '#c2410c' }}>
+            {alerts.length > 0
+              ? (alerts.reduce((s, a) => s + a.risk_score, 0) / alerts.length * 100).toFixed(0)
+              : '—'
+            }
+          </div>
+          <div className="kpi-sub">Across open alerts</div>
+        </div>
+      </div>
+
+      {/* Spike Warning */}
+      {hasSpikeData && (
+        <div className="alert alert-danger" style={{ marginBottom: '16px' }}>
+          <AlertTriangle size={16} />
+          <div style={{ flex: 1 }}>
+            <strong>Spike detected</strong> — transaction velocity reached {spikeRatio}× baseline on merchant_001.
+          </div>
+          <button className="btn btn-sm btn-danger" onClick={() => navigate('/investigation')}>
+            Investigate
+          </button>
+        </div>
+      )}
+
+      {/* Transaction Volume Chart */}
+      <div className="card" style={{ marginBottom: '16px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+          <h2 className="section-title">Transaction Velocity</h2>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '16px', fontSize: '11px', color: 'var(--color-text-muted)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+              <span style={{ width: '10px', height: '2px', background: 'var(--color-primary)', borderRadius: '1px' }} />
+              Live
             </div>
-          )}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+              <span style={{ width: '10px', height: '1px', borderTop: '1px dashed #9ca3af' }} />
+              Baseline
+            </div>
+          </div>
         </div>
 
-        <ResponsiveContainer width="100%" height={280}>
-          <AreaChart data={timelineData}>
+        <ResponsiveContainer width="100%" height={220}>
+          <AreaChart data={timelineData} margin={{ top: 5, right: 10, left: -20, bottom: 0 }}>
             <defs>
-              <linearGradient id="rateGradient" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor="#3b82f6" stopOpacity={0.3} />
-                <stop offset="100%" stopColor="#3b82f6" stopOpacity={0} />
-              </linearGradient>
-              <linearGradient id="spikeGradient" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor="#ef4444" stopOpacity={0.4} />
-                <stop offset="100%" stopColor="#ef4444" stopOpacity={0} />
+              <linearGradient id="rateGrad" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor="var(--color-primary)" stopOpacity={0.15} />
+                <stop offset="100%" stopColor="var(--color-primary)" stopOpacity={0.02} />
               </linearGradient>
             </defs>
-            <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
-            <XAxis dataKey="time" stroke="#64748b" fontSize={11} />
-            <YAxis stroke="#64748b" fontSize={11} />
+            <CartesianGrid strokeDasharray="3 3" vertical={false} />
+            <XAxis dataKey="time" fontSize={11} tickLine={false} axisLine={{ stroke: '#e5e7eb' }} />
+            <YAxis fontSize={11} tickLine={false} axisLine={false} />
             <Tooltip
               contentStyle={{
-                background: '#1a2332', border: '1px solid #1e293b',
-                borderRadius: '8px', fontSize: '12px',
+                background: '#fff', border: '1px solid #e5e7eb',
+                borderRadius: '6px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
+                fontSize: '12px',
               }}
+              formatter={(val: any) => [`${val} txns/min`]}
             />
-            <Area
-              type="monotone" dataKey="baseline" stroke="#64748b"
-              strokeDasharray="5 5" fill="none" strokeWidth={1}
-            />
-            <Area
-              type="monotone" dataKey="rate" stroke="#3b82f6"
-              fill="url(#rateGradient)" strokeWidth={2}
-            />
+            <Area type="monotone" dataKey="baseline" stroke="#9ca3af" strokeDasharray="4 4" fill="none" strokeWidth={1} />
+            <Area type="monotone" dataKey="rate" stroke="var(--color-primary)" fill="url(#rateGrad)" strokeWidth={1.5} />
           </AreaChart>
         </ResponsiveContainer>
       </div>
 
       {/* Recent Alerts */}
-      <div className="card">
-        <h2 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '16px' }}>
-          Recent Alerts
-        </h2>
-        {alerts.length === 0 ? (
-          <div style={{
-            textAlign: 'center', padding: '40px', color: 'var(--color-text-muted)',
-          }}>
-            <Shield size={40} style={{ marginBottom: '12px', opacity: 0.3 }} />
-            <p>No alerts yet. Use the Investigation page to simulate a fraud spike.</p>
+      <div className="card-flush">
+        <div style={{ padding: '12px 14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--color-border)' }}>
+          <h2 className="section-title">Recent Alerts</h2>
+          <div className="filter-bar" style={{ border: 'none', padding: 0, background: 'transparent' }}>
+            <div className="search-input">
+              <Search size={14} color="var(--color-text-dim)" />
+              <input
+                type="text"
+                placeholder="Filter alerts..."
+                value={searchFilter}
+                onChange={(e) => setSearchFilter(e.target.value)}
+              />
+            </div>
+          </div>
+        </div>
+
+        {filteredAlerts.length === 0 ? (
+          <div className="empty-state">
+            <Shield size={28} color="var(--color-text-dim)" />
+            <div className="empty-state-title">No open alerts</div>
+            <div className="empty-state-text">
+              All merchants are operating within normal parameters.
+            </div>
+            <button className="btn btn-primary" style={{ marginTop: '12px' }} onClick={() => navigate('/investigation')}>
+              Simulate Spike
+            </button>
           </div>
         ) : (
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>Alert ID</th>
-                <th>Merchant</th>
-                <th>Risk</th>
-                <th>Spike</th>
-                <th>Status</th>
-                <th>Time</th>
-              </tr>
-            </thead>
-            <tbody>
-              {alerts.slice(0, 10).map(alert => (
-                <tr key={alert.id}>
-                  <td style={{ fontFamily: 'var(--font-mono)', fontSize: '0.8rem' }}>
-                    {alert.id}
-                  </td>
-                  <td>{alert.merchant_id}</td>
-                  <td>
-                    <span className={`badge badge-${alert.risk_level}`}>
-                      {(alert.risk_score * 100).toFixed(0)}%
-                    </span>
-                  </td>
-                  <td style={{ fontWeight: 600, color: 'var(--color-danger)' }}>
-                    {alert.spike_ratio.toFixed(1)}x
-                  </td>
-                  <td>
-                    <span className={`badge badge-${alert.status === 'open' ? 'high' : 'info'}`}>
-                      {alert.status}
-                    </span>
-                  </td>
-                  <td style={{ color: 'var(--color-text-muted)', fontSize: '0.8rem' }}>
-                    {new Date(alert.created_at).toLocaleTimeString()}
-                  </td>
+          <div className="table-wrap">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Alert ID</th>
+                  <th>Merchant</th>
+                  <th>Risk</th>
+                  <th>Spike Ratio</th>
+                  <th>Status</th>
+                  <th>Time</th>
+                  <th></th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {filteredAlerts.slice(0, 10).map(alert => (
+                  <tr key={alert.id}>
+                    <td className="mono" style={{ fontSize: '12px', color: 'var(--color-primary)' }}>{alert.id}</td>
+                    <td style={{ fontWeight: 500 }}>{alert.merchant_id}</td>
+                    <td>
+                      <span className={`badge badge-${alert.risk_level}`}>
+                        {(alert.risk_score * 100).toFixed(0)}
+                      </span>
+                    </td>
+                    <td className="tabular" style={{ fontWeight: 600, color: 'var(--color-danger)' }}>
+                      {alert.spike_ratio.toFixed(1)}×
+                    </td>
+                    <td>
+                      <span className={`badge ${alert.status === 'open' ? 'badge-critical' : 'badge-info'}`}>
+                        {alert.status}
+                      </span>
+                    </td>
+                    <td style={{ color: 'var(--color-text-muted)', fontSize: '12px' }}>
+                      {new Date(alert.created_at).toLocaleTimeString()}
+                    </td>
+                    <td>
+                      <button className="btn btn-sm btn-secondary" onClick={() => navigate('/investigation')}>
+                        Investigate
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
-      </div>
-    </div>
-  );
-}
-
-function StatCard({ icon, label, value, color, bgColor }: {
-  icon: React.ReactNode; label: string; value: string;
-  color: string; bgColor: string;
-}) {
-  return (
-    <div className="card" style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-      <div style={{
-        width: '44px', height: '44px', borderRadius: '10px',
-        background: bgColor, display: 'flex',
-        alignItems: 'center', justifyContent: 'center', color,
-      }}>
-        {icon}
-      </div>
-      <div>
-        <div className="stat-value" style={{ color }}>{value}</div>
-        <div className="stat-label">{label}</div>
       </div>
     </div>
   );

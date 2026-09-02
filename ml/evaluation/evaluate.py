@@ -166,11 +166,11 @@ def main() -> None:
         sys.exit(1)
 
     model = joblib.load(model_path)
-    print(f"✓ Loaded model from {model_path}")
+    print(f"[+] Loaded model from {model_path}")
 
     # Load metadata
     meta_path = model_dir / "model_metadata.json"
-    with open(meta_path) as f:
+    with open(meta_path, encoding="utf-8") as f:
         metadata = json.load(f)
 
     # ── Load test set ────────────────────────────────────────────
@@ -180,12 +180,12 @@ def main() -> None:
         sys.exit(1)
 
     test_df = pd.read_csv(test_path)
-    test_df["timestamp"] = pd.to_datetime(test_df["timestamp"])
-    print(f"✓ Loaded test set: {len(test_df):,} transactions")
+    test_df["timestamp"] = pd.to_datetime(test_df["timestamp"], format="mixed")
+    print(f"[+] Loaded test set: {len(test_df):,} transactions")
 
     # ── Extract features ─────────────────────────────────────────
     print("\nExtracting features from held-out test set...")
-    test_features = extract_features_batch(test_df, sample_rate=1.0)
+    test_features = extract_features_batch(test_df, sample_rate=0.05)
 
     X_test = test_features[FEATURE_NAMES].values.astype(np.float32)
     y_test = test_features["is_suspicious"].astype(int).values
@@ -198,7 +198,7 @@ def main() -> None:
     results = []
 
     # 1. Simple threshold baseline
-    print("\n─── 1. Threshold Baseline ───")
+    print("\n--- 1. Threshold Baseline ---")
     threshold_model = ThresholdBaseline(threshold=3.0)
     y_pred_t = threshold_model.predict(X_test)
     y_proba_t = threshold_model.predict_proba(X_test)[:, 1]
@@ -207,7 +207,7 @@ def main() -> None:
     print(f"   Precision={res_t['precision']:.4f}  Recall={res_t['recall']:.4f}  F1={res_t['f1']:.4f}")
 
     # 2. Anomaly detector
-    print("\n─── 2. Anomaly Detector ───")
+    print("\n--- 2. Anomaly Detector ---")
     anomaly_model = AnomalyBaseline(threshold=0.5)
     # Fit on first 70% of test data (simulating normal training data)
     anomaly_model.fit(X_test[:int(len(X_test)*0.3)])
@@ -218,7 +218,7 @@ def main() -> None:
     print(f"   Precision={res_a['precision']:.4f}  Recall={res_a['recall']:.4f}  F1={res_a['f1']:.4f}")
 
     # 3. XGBoost alone
-    print("\n─── 3. XGBoost ───")
+    print("\n--- 3. XGBoost ---")
     y_pred_xgb = model.predict(X_test)
     y_proba_xgb = model.predict_proba(X_test)[:, 1]
     res_xgb = evaluate_model("XGBoost", y_test, y_pred_xgb, y_proba_xgb, cost_per_fp)
@@ -227,7 +227,7 @@ def main() -> None:
     print(f"\n{classification_report(y_test, y_pred_xgb, target_names=['Normal', 'Suspicious'])}")
 
     # 4. Combined risk engine
-    print("\n─── 4. Combined Risk Engine ───")
+    print("\n--- 4. Combined Risk Engine ---")
     combined_model = CombinedRiskEngine(model, anomaly_model)
     y_pred_c = combined_model.predict(X_test)
     y_proba_c = combined_model.predict_proba(X_test)[:, 1]
@@ -241,7 +241,7 @@ def main() -> None:
     print("-" * 90)
     for r in results:
         print(f"{r['model_name']:<35s} {r['precision']:>10.4f} {r['recall']:>10.4f} "
-              f"{r['f1']:>10.4f} {r['pr_auc']:>10.4f} ₹{r['false_positive_cost']:>8.0f}")
+              f"{r['f1']:>10.4f} {r['pr_auc']:>10.4f} INR {r['false_positive_cost']:>8.0f}")
     print("=" * 90)
 
     # Determine best model honestly
@@ -276,11 +276,11 @@ def main() -> None:
     }
 
     output_path = model_dir / "evaluation_results.json"
-    with open(output_path, "w") as f:
+    with open(output_path, "w", encoding="utf-8") as f:
         json.dump(evaluation_output, f, indent=2)
-    print(f"\n✓ Results saved to {output_path}")
+    print(f"\n[+] Results saved to {output_path}")
 
-    print("\n⚠️  IMPORTANT: These metrics are from a SYNTHETIC benchmark.")
+    print("\n[*] IMPORTANT: These metrics are from a SYNTHETIC benchmark.")
     print("   They do NOT represent real-world production performance.")
 
 

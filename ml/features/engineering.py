@@ -215,7 +215,7 @@ def compute_time_features(
     dow = ts.dayofweek
 
     # Time deviation: how far from merchant's typical active hours
-    historical_hours = pd.to_datetime(merchant_df["timestamp"]).dt.hour
+    historical_hours = pd.to_datetime(merchant_df["timestamp"], format="mixed").dt.hour
     if len(historical_hours) > 0:
         typical_hour = float(historical_hours.median())
         time_dev = abs(hour - typical_hour) / 12.0  # normalize to [0, 1]
@@ -304,17 +304,18 @@ def extract_features_batch(
         DataFrame with all features + transaction_id + is_suspicious.
     """
     df = df.copy()
-    df["timestamp"] = pd.to_datetime(df["timestamp"])
+    df["timestamp"] = pd.to_datetime(df["timestamp"], format="mixed")
     df = df.sort_values("timestamp").reset_index(drop=True)
 
     if sample_rate < 1.0:
-        # Stratified sampling — ensure suspicious transactions are preserved
-        suspicious = df[df["is_suspicious"] == True]
-        normal = df[df["is_suspicious"] == False]
-        normal_sample = normal.sample(
+        # Stratified sampling — preserve class balance according to sample_rate
+        suspicious = df[df["is_suspicious"] == True].sample(
             frac=sample_rate, random_state=42
         )
-        df = pd.concat([suspicious, normal_sample]).sort_values("timestamp").reset_index(drop=True)
+        normal = df[df["is_suspicious"] == False].sample(
+            frac=sample_rate, random_state=42
+        )
+        df = pd.concat([suspicious, normal]).sort_values("timestamp").reset_index(drop=True)
 
     if merchant_baselines is None:
         merchant_baselines = _compute_baselines(df)
@@ -354,7 +355,7 @@ def extract_features_batch(
     result = pd.DataFrame(all_features)
 
     if verbose:
-        print(f"  ✓ Extracted {len(result):,} feature vectors")
+        print(f"  [+] Extracted {len(result):,} feature vectors")
         print(f"  Features: {len(FEATURE_NAMES)}")
 
     return result

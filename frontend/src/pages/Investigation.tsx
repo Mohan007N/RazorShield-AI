@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import {
-  AlertTriangle, ToggleLeft, ToggleRight, CheckCircle,
-  XCircle, Clock, Zap, Shield, Search, FileText, Cpu, Wrench, Eye
+  AlertTriangle, CheckCircle, Clock, Zap,
+  ChevronDown, ChevronUp, AlertCircle, Check,
+  ToggleLeft, ToggleRight,
 } from 'lucide-react';
 import { api, type InvestigationResult, type Alert } from '../services/api';
 
@@ -11,23 +12,26 @@ export default function InvestigationPage() {
   const [result, setResult] = useState<InvestigationResult | null>(null);
   const [deviceFailure, setDeviceFailure] = useState(false);
   const [approved, setApproved] = useState(false);
-  const [step, setStep] = useState(0); // 0=idle, 1=spike, 2=investigating, 3=done
+  const [showTestTools, setShowTestTools] = useState(true);
+  const [showAuditJson, setShowAuditJson] = useState(false);
+  const [selectedMerchant, setSelectedMerchant] = useState('merchant_001');
+  const [showConfirm, setShowConfirm] = useState(false);
+
+  const step = !alert ? 0 : !result ? 1 : 2;
 
   const handleSimulate = async () => {
     setLoading(true);
-    setStep(1);
     setResult(null);
     setApproved(false);
     try {
       const data = await api.simulateSpike({
-        merchant_id: 'merchant_001',
+        merchant_id: selectedMerchant,
         normal_txn_count: 120,
         spike_txn_count: 980,
         spike_duration_minutes: 5,
         suspicious_ratio: 0.15,
       });
       setAlert(data.alert);
-      setStep(1);
     } catch (e) {
       console.error(e);
     }
@@ -37,11 +41,9 @@ export default function InvestigationPage() {
   const handleInvestigate = async () => {
     if (!alert) return;
     setLoading(true);
-    setStep(2);
     try {
       const data = await api.investigateAlert(alert.id);
       setResult(data);
-      setStep(3);
     } catch (e) {
       console.error(e);
     }
@@ -58,294 +60,343 @@ export default function InvestigationPage() {
     if (!result) return;
     await api.approveAction(result.investigation.id);
     setApproved(true);
+    setShowConfirm(false);
   };
 
   return (
     <div className="animate-fade-in">
-      <div style={{ marginBottom: '24px' }}>
-        <h1 style={{ fontSize: '1.5rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <AlertTriangle size={24} color="var(--color-warning)" />
-          Fraud Spike Investigation
-        </h1>
-        <p style={{ color: 'var(--color-text-muted)', fontSize: '0.85rem', marginTop: '4px' }}>
-          Simulate a spike → Detect → Investigate → Evidence → Recommendation → Approval
-        </p>
-      </div>
-
-      {/* Controls */}
-      <div className="card" style={{ marginBottom: '20px' }}>
-        <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
-          <button className="btn btn-primary" onClick={handleSimulate} disabled={loading}>
-            <Zap size={16} />
-            {loading && step === 1 ? 'Simulating...' : '1. Simulate Fraud Spike'}
-          </button>
-
-          <button
-            className="btn btn-primary"
-            onClick={handleInvestigate}
-            disabled={!alert || loading}
-            style={{ opacity: alert ? 1 : 0.4 }}
-          >
-            <Search size={16} />
-            {loading && step === 2 ? 'Investigating...' : '2. Run Agent Investigation'}
-          </button>
-
-          <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <span style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>
-              Device Failure Demo:
-            </span>
-            <button
-              className="btn btn-ghost"
-              onClick={handleToggleDeviceFailure}
-              style={{ padding: '6px 12px', fontSize: '0.8rem' }}
-            >
-              {deviceFailure ? (
-                <><ToggleRight size={16} color="var(--color-danger)" /> ON</>
-              ) : (
-                <><ToggleLeft size={16} /> OFF</>
-              )}
-            </button>
+      {/* Header */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+        <div>
+          <h1 className="page-title">Fraud Spike Investigation</h1>
+          <div className="page-subtitle">
+            {step === 0 && 'Simulate a spike to begin investigation'}
+            {step === 1 && 'Alert detected — run agent investigation'}
+            {step === 2 && 'Investigation complete — review findings'}
           </div>
         </div>
+        {alert && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span className={`badge badge-${alert.risk_level}`}>
+              Risk {(alert.risk_score * 100).toFixed(0)}
+            </span>
+            <span className="badge badge-neutral">
+              {!result ? 'Pending Investigation' : approved ? 'Approved' : 'Awaiting Approval'}
+            </span>
+          </div>
+        )}
       </div>
 
-      {/* Step 1: Alert */}
-      {alert && (
-        <div className="card animate-fade-in" style={{ marginBottom: '20px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-            <div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '12px' }}>
-                <span className="badge badge-critical" style={{ fontSize: '0.85rem', padding: '6px 14px' }}>
-                  🚨 FRAUD SPIKE DETECTED
-                </span>
-                <span className={`badge badge-${alert.risk_level}`}>
-                  {alert.risk_level.toUpperCase()}
-                </span>
-              </div>
-              <p style={{ color: 'var(--color-text-secondary)', fontSize: '0.9rem', maxWidth: '600px' }}>
-                {alert.summary}
-              </p>
-            </div>
-            <div style={{ textAlign: 'right' }}>
-              <div className="stat-value" style={{ color: 'var(--color-danger)' }}>
-                {alert.spike_ratio.toFixed(1)}x
-              </div>
-              <div className="stat-label">ABOVE BASELINE</div>
+      {/* Test Tools (collapsible) */}
+      <div className="card" style={{ marginBottom: '12px' }}>
+        <button
+          className="btn btn-ghost"
+          style={{ width: '100%', justifyContent: 'space-between', padding: '4px 0' }}
+          onClick={() => setShowTestTools(!showTestTools)}
+        >
+          <span className="section-title" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <Zap size={14} />
+            Test Tools
+          </span>
+          {showTestTools ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+        </button>
+
+        {showTestTools && (
+          <div style={{ marginTop: '12px', display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
+            <select
+              className="select"
+              value={selectedMerchant}
+              onChange={(e) => setSelectedMerchant(e.target.value)}
+            >
+              <option value="merchant_001">merchant_001</option>
+              <option value="merchant_004">merchant_004</option>
+              <option value="merchant_008">merchant_008</option>
+              <option value="merchant_016">merchant_016</option>
+            </select>
+
+            <button className="btn btn-primary" onClick={handleSimulate} disabled={loading}>
+              {loading && !alert ? 'Simulating...' : 'Simulate Spike'}
+            </button>
+            <button className="btn btn-secondary" onClick={handleInvestigate} disabled={!alert || loading}>
+              {loading && alert && !result ? 'Investigating...' : 'Run Investigation'}
+            </button>
+
+            <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>Device failure</span>
+              <button className="btn btn-ghost" style={{ padding: '2px' }} onClick={handleToggleDeviceFailure}>
+                {deviceFailure
+                  ? <ToggleRight size={20} color="var(--color-danger)" />
+                  : <ToggleLeft size={20} color="var(--color-text-dim)" />
+                }
+              </button>
             </div>
           </div>
+        )}
+      </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '16px', marginTop: '16px' }}>
-            <MiniStat label="Risk Score" value={`${(alert.risk_score * 100).toFixed(0)}%`} color="var(--color-danger)" />
-            <MiniStat label="Current Rate" value={`${alert.current_txn_rate}/min`} color="var(--color-warning)" />
-            <MiniStat label="Baseline Rate" value={`${alert.baseline_txn_rate}/min`} color="var(--color-text-secondary)" />
-            <MiniStat label="Alert ID" value={alert.id.slice(0, 16)} color="var(--color-text-muted)" mono />
+      {/* Device failure warning */}
+      {deviceFailure && (
+        <div className="alert alert-warning" style={{ marginBottom: '12px' }}>
+          <AlertCircle size={15} />
+          <span>
+            <strong>Device service unavailable.</strong> Agent will fall back to available evidence and default to human review.
+          </span>
+        </div>
+      )}
+
+      {/* Alert Details */}
+      {alert && (
+        <div className="card animate-fade-in" style={{ marginBottom: '12px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '12px' }}>
+            <div className="section-title">Detected Alert</div>
+            <span className="mono" style={{ fontSize: '11px', color: 'var(--color-text-muted)' }}>{alert.id}</span>
+          </div>
+
+          <p style={{ fontSize: '13px', color: 'var(--color-text-secondary)', marginBottom: '12px' }}>
+            {alert.summary}
+          </p>
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '8px' }}>
+            {[
+              ['Risk Score', `${(alert.risk_score * 100).toFixed(0)} / 100`],
+              ['Spike Ratio', `${alert.spike_ratio.toFixed(1)}×`],
+              ['Current Rate', `${alert.current_txn_rate}/min`],
+              ['Baseline Rate', `${alert.baseline_txn_rate}/min`],
+              ['Severity', alert.risk_level.toUpperCase()],
+            ].map(([label, value]) => (
+              <div key={label} style={{
+                padding: '8px 10px', background: 'var(--color-surface-alt)',
+                borderRadius: 'var(--radius)', border: '1px solid var(--color-border-light)',
+              }}>
+                <div style={{ fontSize: '11px', color: 'var(--color-text-muted)', marginBottom: '2px' }}>{label}</div>
+                <div style={{ fontSize: '14px', fontWeight: 600, color: 'var(--color-text)' }} className="tabular">{value}</div>
+              </div>
+            ))}
           </div>
         </div>
       )}
 
-      {/* Step 2-3: Investigation Result */}
+      {/* Investigation Results */}
       {result && (
         <div className="animate-fade-in">
-          {/* Investigation Summary */}
-          <div className="card" style={{ marginBottom: '20px' }}>
-            <h3 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <Cpu size={18} color="var(--color-accent)" />
-              Agent Investigation Report
-              <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', fontWeight: 400, marginLeft: 'auto' }}>
-                Completed in {result.latency_ms.toFixed(0)}ms
+          {/* Agent Activity */}
+          <div className="card" style={{ marginBottom: '12px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+              <div className="section-title">Investigation Activity</div>
+              <span style={{ fontSize: '11px', color: 'var(--color-text-muted)' }}>
+                {result.latency_ms.toFixed(0)}ms
               </span>
-            </h3>
-
-            {/* Tools Called */}
-            <div style={{ marginBottom: '16px' }}>
-              <div style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--color-text-muted)', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                Tools Invoked
-              </div>
-              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                {result.investigation.tools_called.map(tool => (
-                  <div key={tool} className="badge badge-info" style={{ fontSize: '0.75rem' }}>
-                    <Wrench size={12} /> {tool}
-                  </div>
-                ))}
-              </div>
             </div>
 
-            {/* Tool Latencies */}
-            <div style={{ marginBottom: '16px' }}>
-              <div style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--color-text-muted)', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                Tool Execution Latency
-              </div>
-              <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
-                {Object.entries(result.investigation.tool_latencies).map(([tool, ms]) => (
-                  <span key={tool} style={{ fontSize: '0.75rem', color: 'var(--color-text-secondary)' }}>
-                    {tool}: <strong>{(ms as number).toFixed(1)}ms</strong>
-                  </span>
-                ))}
-              </div>
+            {/* Tool execution checklist */}
+            <div style={{ marginBottom: '12px' }}>
+              {result.investigation.tools_called.map(tool => (
+                <div key={tool} style={{
+                  display: 'flex', alignItems: 'center', gap: '8px',
+                  padding: '4px 0', fontSize: '13px',
+                }}>
+                  <Check size={14} color="var(--color-success)" />
+                  <span className="mono" style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>{tool}</span>
+                  {result.investigation.tool_latencies[tool] !== undefined && (
+                    <span style={{ fontSize: '11px', color: 'var(--color-text-dim)', marginLeft: 'auto' }}>
+                      {(result.investigation.tool_latencies[tool] as number).toFixed(0)}ms
+                    </span>
+                  )}
+                </div>
+              ))}
             </div>
 
             {/* Errors */}
             {result.investigation.errors.length > 0 && (
-              <div style={{ marginBottom: '16px' }}>
-                <div style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--color-danger)', marginBottom: '8px', textTransform: 'uppercase' }}>
-                  ⚠️ Failures / Incomplete Evidence
+              <div className="alert alert-warning" style={{ marginBottom: '12px' }}>
+                <AlertTriangle size={14} />
+                <div>
+                  {result.investigation.errors.map((err, i) => (
+                    <div key={i} style={{ fontSize: '13px' }}>{err}</div>
+                  ))}
                 </div>
-                {result.investigation.errors.map((err, i) => (
-                  <div key={i} style={{
-                    padding: '8px 12px', marginBottom: '4px',
-                    background: 'rgba(239, 68, 68, 0.08)', border: '1px solid rgba(239, 68, 68, 0.2)',
-                    borderRadius: '6px', fontSize: '0.8rem', color: '#fca5a5',
-                  }}>
-                    <XCircle size={14} style={{ display: 'inline', verticalAlign: 'middle', marginRight: '6px' }} />
-                    {err}
-                  </div>
-                ))}
               </div>
             )}
 
             {/* Summary */}
             <div style={{
-              padding: '16px', background: 'var(--color-surface-elevated)',
-              borderRadius: '8px', border: '1px solid var(--color-border)',
-              whiteSpace: 'pre-line', fontSize: '0.85rem', lineHeight: 1.7,
+              padding: '10px 12px', background: 'var(--color-surface-alt)',
+              border: '1px solid var(--color-border-light)', borderRadius: 'var(--radius)',
+              fontSize: '13px', lineHeight: 1.6, color: 'var(--color-text-secondary)',
+              whiteSpace: 'pre-line',
             }}>
               {result.investigation.summary}
             </div>
+            <div style={{ marginTop: '8px', fontSize: '12px', color: 'var(--color-text-muted)' }}>
+              Evidence sources: {result.investigation.evidence.length}
+            </div>
           </div>
 
-          {/* Evidence Chain */}
-          <div className="card" style={{ marginBottom: '20px' }}>
-            <h3 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <Eye size={18} color="var(--color-info)" />
-              Evidence Chain
-            </h3>
-            <div className="evidence-chain">
+          {/* Evidence */}
+          <div className="card" style={{ marginBottom: '12px' }}>
+            <div className="section-title" style={{ marginBottom: '10px' }}>Evidence</div>
+
+            <div className="evidence-grid">
+              <div className="evidence-row header">
+                <div>Signal</div>
+                <div>Value</div>
+                <div>Confidence</div>
+                <div>Source</div>
+              </div>
               {result.investigation.evidence.map((ev, i) => (
-                <div key={i} className={`evidence-node ${ev.confidence === 0 ? 'error' : ''}`}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span style={{ fontSize: '0.7rem', color: 'var(--color-primary)', fontWeight: 600 }}>
-                      {ev.source_tool}
-                    </span>
+                <div key={i} className="evidence-row">
+                  <div style={{ color: 'var(--color-text-secondary)' }}>{ev.field}</div>
+                  <div style={{ fontWeight: 600 }}>{ev.value}</div>
+                  <div>
                     <span style={{
-                      fontSize: '0.65rem', padding: '2px 6px', borderRadius: '4px',
-                      background: ev.confidence > 0.5 ? 'rgba(16, 185, 129, 0.15)' : 'rgba(239, 68, 68, 0.15)',
-                      color: ev.confidence > 0.5 ? '#34d399' : '#f87171',
+                      fontSize: '11px', fontWeight: 600,
+                      color: ev.confidence > 0.5 ? 'var(--color-success)' : 'var(--color-danger)',
                     }}>
-                      conf: {ev.confidence}
+                      {ev.confidence}
                     </span>
                   </div>
-                  <div style={{ marginTop: '4px', fontSize: '0.8rem' }}>
-                    <span style={{ color: 'var(--color-text-muted)' }}>{ev.field}:</span>{' '}
-                    <strong>{ev.value}</strong>
+                  <div className="mono" style={{ fontSize: '11px', color: 'var(--color-text-muted)' }}>
+                    {ev.source_tool}
                   </div>
                 </div>
               ))}
             </div>
           </div>
 
-          {/* Recommendation + Policy + Action Gate */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginBottom: '20px' }}>
-            {/* Recommendation */}
+          {/* Decision Chain: Model → Agent → Policy → Action */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '12px', marginBottom: '12px' }}>
+            {/* Model Result */}
             <div className="card">
-              <h3 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <FileText size={18} color="var(--color-accent)" />
-                Agent Recommendation
-              </h3>
-              <div style={{
-                padding: '12px', background: 'var(--color-surface-elevated)',
-                borderRadius: '8px', fontSize: '0.85rem', lineHeight: 1.6,
-                whiteSpace: 'pre-line',
-              }}>
-                {result.investigation.recommendation}
+              <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: '8px' }}>
+                Model Result
               </div>
-              <div style={{ marginTop: '12px' }}>
-                <span className="badge badge-high">
-                  Action: {result.investigation.recommendation_action}
-                </span>
-                {result.investigation.confidence !== null && (
-                  <span className="badge badge-info" style={{ marginLeft: '8px' }}>
-                    Confidence: {(result.investigation.confidence * 100).toFixed(0)}%
-                  </span>
-                )}
+              <div className="tabular" style={{ fontSize: '24px', fontWeight: 700, marginBottom: '4px' }}>
+                {(result.investigation.risk_score * 100).toFixed(0)}
+                <span style={{ fontSize: '14px', fontWeight: 400, color: 'var(--color-text-muted)' }}> / 100</span>
+              </div>
+              <div style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>
+                Model-estimated risk
               </div>
             </div>
 
-            {/* Policy + Gate */}
+            {/* Agent Recommendation */}
             <div className="card">
-              <h3 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <Shield size={18} color="var(--color-warning)" />
-                Policy Gate
-              </h3>
-              <div style={{ marginBottom: '12px' }}>
-                <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', marginBottom: '4px' }}>Policy Decision</div>
-                <div className={`badge badge-${result.policy_decision.risk_level}`}>
-                  {result.policy_decision.allowed_action}
-                </div>
+              <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: '8px' }}>
+                Agent Recommendation
               </div>
-              <div style={{ fontSize: '0.85rem', color: 'var(--color-text-secondary)', marginBottom: '16px' }}>
+              <div style={{ fontSize: '13px', color: 'var(--color-text-secondary)', lineHeight: 1.5, marginBottom: '8px' }}>
+                {result.investigation.recommendation}
+              </div>
+              <span className="badge badge-high">
+                {result.investigation.recommendation_action}
+              </span>
+            </div>
+
+            {/* Policy Decision */}
+            <div className="card">
+              <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: '8px' }}>
+                Policy Decision
+              </div>
+              <span className={`badge badge-${result.policy_decision.risk_level}`} style={{ fontSize: '12px', marginBottom: '8px' }}>
+                {result.policy_decision.allowed_action}
+              </span>
+              <div style={{ fontSize: '12px', color: 'var(--color-text-muted)', marginTop: '6px' }}>
                 {result.policy_decision.reasoning}
               </div>
+            </div>
+          </div>
 
-              {result.action_gate.requires_human_review && (
-                <div style={{
-                  padding: '12px', background: 'rgba(245, 158, 11, 0.08)',
-                  border: '1px solid rgba(245, 158, 11, 0.2)', borderRadius: '8px',
-                }}>
-                  <div style={{ fontSize: '0.8rem', fontWeight: 600, color: '#fbbf24', marginBottom: '8px' }}>
-                    ⚠️ Human Approval Required
+          {/* Action Gate */}
+          {result.action_gate.requires_human_review && (
+            <div className="card" style={{ marginBottom: '12px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                <div>
+                  <div className="section-title" style={{ marginBottom: '4px' }}>Action Authorization</div>
+                  <div style={{ fontSize: '13px', color: 'var(--color-text-muted)', marginBottom: '12px' }}>
+                    This action requires human approval before execution.
                   </div>
-                  {!approved ? (
-                    <button className="btn btn-primary" onClick={handleApprove}>
-                      <CheckCircle size={16} /> Approve Action
-                    </button>
-                  ) : (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--color-success)' }}>
-                      <CheckCircle size={18} />
-                      <span style={{ fontWeight: 600 }}>Approved by admin</span>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px', fontSize: '13px', marginBottom: '12px' }}>
+                    <div>
+                      <div style={{ fontSize: '11px', color: 'var(--color-text-muted)', textTransform: 'uppercase', marginBottom: '2px' }}>Recommended</div>
+                      <div style={{ fontWeight: 500 }}>{result.investigation.recommendation_action}</div>
                     </div>
-                  )}
+                    <div>
+                      <div style={{ fontSize: '11px', color: 'var(--color-text-muted)', textTransform: 'uppercase', marginBottom: '2px' }}>Policy</div>
+                      <div style={{ fontWeight: 500 }}>{result.policy_decision.allowed_action}</div>
+                    </div>
+                    <div>
+                      <div style={{ fontSize: '11px', color: 'var(--color-text-muted)', textTransform: 'uppercase', marginBottom: '2px' }}>Approval</div>
+                      <div style={{ fontWeight: 500, color: approved ? 'var(--color-success)' : 'var(--color-warning)' }}>
+                        {approved ? 'Approved' : 'Pending'}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {!approved ? (
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <button className="btn btn-primary" onClick={() => setShowConfirm(true)}>
+                    <CheckCircle size={14} />
+                    Approve
+                  </button>
+                  <button className="btn btn-secondary">
+                    Reject
+                  </button>
+                </div>
+              ) : (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', color: 'var(--color-success)', fontWeight: 500 }}>
+                  <CheckCircle size={15} />
+                  Approved by Mohan Kumar
                 </div>
               )}
             </div>
-          </div>
+          )}
 
-          {/* Audit */}
+          {/* Audit Record */}
           <div className="card">
-            <h3 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <Clock size={18} color="var(--color-text-muted)" />
-              Audit Record
-            </h3>
-            <pre style={{
-              background: 'var(--color-surface-elevated)', padding: '16px',
-              borderRadius: '8px', fontSize: '0.75rem', overflow: 'auto',
-              fontFamily: 'var(--font-mono)', color: 'var(--color-text-secondary)',
-              border: '1px solid var(--color-border)',
-            }}>
-              {JSON.stringify(result.audit, null, 2)}
-            </pre>
+            <button
+              className="btn btn-ghost"
+              style={{ width: '100%', justifyContent: 'space-between', padding: '4px 0' }}
+              onClick={() => setShowAuditJson(!showAuditJson)}
+            >
+              <span className="section-title" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <Clock size={14} />
+                Audit Record
+              </span>
+              {showAuditJson ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+            </button>
+            {showAuditJson && (
+              <pre style={{
+                marginTop: '10px', padding: '10px 12px',
+                background: 'var(--color-surface-alt)', border: '1px solid var(--color-border-light)',
+                borderRadius: 'var(--radius)', fontSize: '11px', overflow: 'auto',
+                fontFamily: 'var(--font-mono)', color: 'var(--color-text-secondary)',
+                maxHeight: '200px',
+              }}>
+                {JSON.stringify(result.audit, null, 2)}
+              </pre>
+            )}
           </div>
         </div>
       )}
-    </div>
-  );
-}
 
-function MiniStat({ label, value, color, mono }: {
-  label: string; value: string; color: string; mono?: boolean;
-}) {
-  return (
-    <div style={{
-      padding: '12px', background: 'var(--color-surface-elevated)',
-      borderRadius: '8px', border: '1px solid var(--color-border)',
-    }}>
-      <div style={{
-        fontWeight: 700, color,
-        fontFamily: mono ? 'var(--font-mono)' : undefined,
-        fontSize: mono ? '0.75rem' : '1.2rem',
-      }}>
-        {value}
-      </div>
-      <div className="stat-label">{label}</div>
+      {/* Approval Confirmation Modal */}
+      {showConfirm && (
+        <div className="modal-overlay" onClick={() => setShowConfirm(false)}>
+          <div className="modal" onClick={e => e.stopPropagation()}>
+            <div className="modal-title">Confirm Approval</div>
+            <p style={{ fontSize: '13px', color: 'var(--color-text-secondary)' }}>
+              You are approving the recommended action: <strong>{result?.investigation.recommendation_action}</strong>.
+              This will authorize the policy-gated response.
+            </p>
+            <div className="modal-actions">
+              <button className="btn btn-secondary" onClick={() => setShowConfirm(false)}>Cancel</button>
+              <button className="btn btn-primary" onClick={handleApprove}>Confirm Approval</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -417,18 +417,18 @@ This data should NOT be used for:
 - Claiming real-world detection performance
 """
 
-    with open(output_dir / "synthetic_labels_methodology.md", "w") as f:
+    with open(output_dir / "synthetic_labels_methodology.md", "w", encoding="utf-8") as f:
         f.write(methodology)
 
 
 def main() -> None:
+    global SEED
     parser = argparse.ArgumentParser(description="Generate synthetic transaction data")
     parser.add_argument("--output-dir", type=str, default="ml/data",
                         help="Output directory for generated data")
     parser.add_argument("--seed", type=int, default=SEED, help="Random seed")
     args = parser.parse_args()
 
-    global SEED
     SEED = args.seed
 
     output_dir = Path(args.output_dir)
@@ -444,19 +444,19 @@ def main() -> None:
     output_path = output_dir / "synthetic_transactions.csv"
     df.to_csv(output_path, index=False)
 
-    print(f"\n✓ Generated {len(df):,} transactions")
+    print(f"\n[+] Generated {len(df):,} transactions")
     print(f"  Normal:     {(~df['is_suspicious']).sum():,}")
     print(f"  Suspicious: {df['is_suspicious'].sum():,}")
     print(f"  Merchants:  {df['merchant_id'].nunique()}")
-    print(f"  Date range: {df['timestamp'].min()} → {df['timestamp'].max()}")
-    print(f"\n✓ Saved to {output_path}")
+    print(f"  Date range: {df['timestamp'].min()} to {df['timestamp'].max()}")
+    print(f"\n[+] Saved to {output_path}")
 
     # Save methodology
     save_methodology(output_dir, df)
-    print(f"✓ Saved labelling methodology to {output_dir / 'synthetic_labels_methodology.md'}")
+    print(f"[+] Saved labelling methodology to {output_dir / 'synthetic_labels_methodology.md'}")
 
     # Print per-merchant stats
-    print("\n─── Per-Merchant Statistics ───")
+    print("\n--- Per-Merchant Statistics ---")
     for mid in sorted(df["merchant_id"].unique()):
         mdf = df[df["merchant_id"] == mid]
         susp = mdf["is_suspicious"].sum()

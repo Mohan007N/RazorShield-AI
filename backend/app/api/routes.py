@@ -264,7 +264,7 @@ async def get_model_metrics(_auth=Depends(verify_api_key)):
             "is_synthetic_benchmark": True,
         }
 
-    with open(eval_path) as f:
+    with open(eval_path, encoding="utf-8") as f:
         results = json.load(f)
     return results
 

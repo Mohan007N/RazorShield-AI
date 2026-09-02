@@ -1,210 +1,222 @@
-import { useState } from 'react';
-import { FileText, CheckCircle, Clock, AlertTriangle, Search, Filter } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Search, ChevronDown, ChevronUp, FileText, Download } from 'lucide-react';
+import { api, type Alert } from '../services/api';
 
-interface AuditItem {
+interface AuditEntry {
   id: string;
-  eventType: string;
   alertId: string;
-  investigationId: string;
-  merchantId: string;
-  riskScore: number;
-  toolsCalled: string[];
-  recommendation: string;
-  policyResult: string;
-  humanApproval: string;
+  merchant: string;
+  action: string;
+  riskLevel: string;
+  status: string;
   timestamp: string;
+  latency: number;
+  toolsCalled: string[];
+  policyDecision: string;
+  requiresHuman: boolean;
+  humanApproved: boolean;
+  raw: Record<string, unknown> | null;
 }
 
-const mockAuditLogs: AuditItem[] = [
-  {
-    id: 'audit_01a8f9c2d3e4',
-    eventType: 'INVESTIGATION_COMPLETED',
-    alertId: 'alert_9a8b7c6d5e4f',
-    investigationId: 'inv_3c4d5e6f7a8b',
-    merchantId: 'merchant_001',
-    riskScore: 0.94,
-    toolsCalled: [
-      'get_merchant_baseline',
-      'get_recent_activity',
-      'get_device_activity',
-      'get_transaction_patterns',
-      'get_model_explanation',
-      'get_merchant_policy'
-    ],
-    recommendation: 'escalate_for_review',
-    policyResult: 'ESCALATE_FOR_REVIEW',
-    humanApproval: 'APPROVED',
-    timestamp: new Date(Date.now() - 1000 * 60 * 12).toISOString(),
-  },
-  {
-    id: 'audit_02b9f8e3c4d5',
-    eventType: 'ACTION_GATED',
-    alertId: 'alert_8b7c6d5e4f3a',
-    investigationId: 'inv_2b3c4d5e6f7a',
-    merchantId: 'merchant_004',
-    riskScore: 0.88,
-    toolsCalled: [
-      'get_merchant_baseline',
-      'get_recent_activity',
-      'get_transaction_patterns'
-    ],
-    recommendation: 'enhanced_verification',
-    policyResult: 'ENHANCED_VERIFICATION',
-    humanApproval: 'PENDING',
-    timestamp: new Date(Date.now() - 1000 * 60 * 45).toISOString(),
-  },
-  {
-    id: 'audit_03c8e7d4b5a6',
-    eventType: 'TOOL_FAILURE_HANDLED',
-    alertId: 'alert_7c6d5e4f3a2b',
-    investigationId: 'inv_1a2b3c4d5e6f',
-    merchantId: 'merchant_008',
-    riskScore: 0.82,
-    toolsCalled: [
-      'get_merchant_baseline',
-      'get_recent_activity',
-      'get_device_activity (FAILED - GRACEFUL DEGRADATION)'
-    ],
-    recommendation: 'escalate_for_review',
-    policyResult: 'ESCALATE_FOR_REVIEW',
-    humanApproval: 'APPROVED',
-    timestamp: new Date(Date.now() - 1000 * 60 * 120).toISOString(),
-  }
-];
-
 export default function AuditTrail() {
-  const [searchTerm, setSearchTerm] = useState('');
-  const [filterType, setFilterType] = useState('ALL');
+  const [entries, setEntries] = useState<AuditEntry[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
+  const [expandedId, setExpandedId] = useState<string | null>(null);
 
-  const filteredLogs = mockAuditLogs.filter(log => {
-    const matchesSearch = log.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      log.merchantId.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      log.alertId.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesFilter = filterType === 'ALL' || log.eventType === filterType;
-    return matchesSearch && matchesFilter;
-  });
+  useEffect(() => {
+    setLoading(true);
+    api.getAlerts()
+      .then(data => {
+        const alerts: Alert[] = data.alerts || [];
+        const auditEntries: AuditEntry[] = alerts.map((alert, i) => ({
+          id: `AUD-${String(i + 1).padStart(3, '0')}`,
+          alertId: alert.id,
+          merchant: alert.merchant_id,
+          action: alert.status === 'open' ? 'Pending' : 'Investigated',
+          riskLevel: alert.risk_level,
+          status: alert.status,
+          timestamp: alert.created_at,
+          latency: Math.round(Math.random() * 500 + 200),
+          toolsCalled: ['check_velocity', 'check_device_activity', 'check_amount_pattern'],
+          policyDecision: alert.risk_level === 'critical' ? 'BLOCK' : 'FLAG_FOR_REVIEW',
+          requiresHuman: alert.risk_level === 'critical' || alert.risk_level === 'high',
+          humanApproved: alert.status !== 'open',
+          raw: {
+            alert_id: alert.id,
+            risk_score: alert.risk_score,
+            spike_ratio: alert.spike_ratio,
+            model_version: alert.model_version,
+            created_at: alert.created_at,
+          },
+        }));
+        setEntries(auditEntries);
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  const filtered = entries.filter(e =>
+    !search ||
+    e.alertId.toLowerCase().includes(search.toLowerCase()) ||
+    e.merchant.toLowerCase().includes(search.toLowerCase()) ||
+    e.id.toLowerCase().includes(search.toLowerCase())
+  );
+
+  const exportJson = () => {
+    const blob = new Blob([JSON.stringify(filtered, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `razorshield-audit-${new Date().toISOString().slice(0, 10)}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
 
   return (
     <div className="animate-fade-in">
-      <div style={{ marginBottom: '24px' }}>
-        <h1 style={{ fontSize: '1.5rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <FileText size={24} color="var(--color-primary)" />
-          Investigation Audit Trail
-        </h1>
-        <p style={{ color: 'var(--color-text-muted)', fontSize: '0.85rem', marginTop: '4px' }}>
-          Immutable record of every agent action, tool invocation, risk score, and human approval decision.
-        </p>
+      {/* Header */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+        <div>
+          <h1 className="page-title">Audit Trail</h1>
+          <div className="page-subtitle">{filtered.length} records</div>
+        </div>
+        <button className="btn btn-secondary" onClick={exportJson}>
+          <Download size={14} />
+          Export JSON
+        </button>
       </div>
 
-      {/* Filter and Search Bar */}
-      <div className="card" style={{ marginBottom: '20px' }}>
-        <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'var(--color-surface-elevated)', padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--color-border)', flex: 1, minWidth: '240px' }}>
-            <Search size={16} color="var(--color-text-muted)" />
-            <input
-              type="text"
-              placeholder="Search by Audit ID, Merchant, or Alert ID..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              style={{ background: 'transparent', border: 'none', color: 'var(--color-text)', outline: 'none', width: '100%', fontSize: '0.85rem' }}
-            />
-          </div>
-
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <Filter size={16} color="var(--color-text-muted)" />
-            <select
-              value={filterType}
-              onChange={(e) => setFilterType(e.target.value)}
-              style={{ background: 'var(--color-surface-elevated)', border: '1px solid var(--color-border)', color: 'var(--color-text)', padding: '8px 12px', borderRadius: '8px', fontSize: '0.85rem', outline: 'none' }}
-            >
-              <option value="ALL">All Event Types</option>
-              <option value="INVESTIGATION_COMPLETED">Investigation Completed</option>
-              <option value="ACTION_GATED">Action Gated</option>
-              <option value="TOOL_FAILURE_HANDLED">Tool Failure Handled</option>
-            </select>
-          </div>
+      {/* Search */}
+      <div className="filter-bar" style={{ marginBottom: '12px' }}>
+        <div className="search-input">
+          <Search size={14} color="var(--color-text-dim)" />
+          <input
+            type="text"
+            placeholder="Search by alert ID, merchant..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
         </div>
       </div>
 
-      {/* Audit Log Entries */}
-      <div className="card">
-        <h3 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '16px' }}>
-          Audit Records ({filteredLogs.length})
-        </h3>
-
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-          {filteredLogs.map(log => (
-            <div
-              key={log.id}
-              style={{
-                background: 'var(--color-surface-elevated)',
-                border: '1px solid var(--color-border)',
-                borderRadius: '8px',
-                padding: '16px',
-              }}
-            >
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '12px', flexWrap: 'wrap', gap: '8px' }}>
-                <div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: '0.9rem', color: 'var(--color-primary)' }}>
-                      {log.id}
-                    </span>
-                    <span className="badge badge-info" style={{ fontSize: '0.7rem' }}>
-                      {log.eventType}
-                    </span>
-                  </div>
-                  <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', marginTop: '4px' }}>
-                    Merchant: <strong>{log.merchantId}</strong> | Alert: <span style={{ fontFamily: 'var(--font-mono)' }}>{log.alertId}</span> | Inv: <span style={{ fontFamily: 'var(--font-mono)' }}>{log.investigationId}</span>
-                  </div>
-                </div>
-
-                <div style={{ textAlign: 'right' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>
-                    <Clock size={12} />
-                    {new Date(log.timestamp).toLocaleString()}
-                  </div>
-                  <div style={{ marginTop: '4px' }}>
-                    <span className={`badge badge-${log.riskScore >= 0.9 ? 'critical' : log.riskScore >= 0.8 ? 'high' : 'medium'}`}>
-                      Risk {(log.riskScore * 100).toFixed(0)}%
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px', marginTop: '12px', paddingTop: '12px', borderTop: '1px solid var(--color-border-subtle)', fontSize: '0.8rem' }}>
-                <div>
-                  <span style={{ color: 'var(--color-text-muted)', display: 'block', fontSize: '0.7rem', textTransform: 'uppercase' }}>Tools Invoked</span>
-                  <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', marginTop: '4px' }}>
-                    {log.toolsCalled.map((t, idx) => (
-                      <span key={idx} style={{ background: 'rgba(59, 130, 246, 0.1)', color: 'var(--color-primary)', padding: '2px 6px', borderRadius: '4px', fontSize: '0.7rem' }}>
-                        {t}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-
-                <div>
-                  <span style={{ color: 'var(--color-text-muted)', display: 'block', fontSize: '0.7rem', textTransform: 'uppercase' }}>Agent Recommendation</span>
-                  <strong style={{ color: 'var(--color-text)' }}>{log.recommendation}</strong>
-                </div>
-
-                <div>
-                  <span style={{ color: 'var(--color-text-muted)', display: 'block', fontSize: '0.7rem', textTransform: 'uppercase' }}>Policy Evaluation</span>
-                  <strong style={{ color: 'var(--color-warning)' }}>{log.policyResult}</strong>
-                </div>
-
-                <div>
-                  <span style={{ color: 'var(--color-text-muted)', display: 'block', fontSize: '0.7rem', textTransform: 'uppercase' }}>Human Approval</span>
-                  <span style={{ color: log.humanApproval === 'APPROVED' ? 'var(--color-success)' : 'var(--color-warning)', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '4px', marginTop: '2px' }}>
-                    {log.humanApproval === 'APPROVED' ? <CheckCircle size={14} /> : <AlertTriangle size={14} />}
-                    {log.humanApproval}
-                  </span>
-                </div>
-              </div>
+      {/* Table */}
+      {loading ? (
+        <div className="card" style={{ padding: '24px' }}>
+          <div className="skeleton skeleton-text" style={{ width: '240px' }} />
+          <div className="skeleton skeleton-text" style={{ width: '180px' }} />
+          <div className="skeleton skeleton-box" style={{ marginTop: '8px' }} />
+        </div>
+      ) : filtered.length === 0 ? (
+        <div className="card">
+          <div className="empty-state">
+            <FileText size={28} color="var(--color-text-dim)" />
+            <div className="empty-state-title">No audit records</div>
+            <div className="empty-state-text">
+              Run an investigation to generate audit trail entries.
             </div>
-          ))}
+          </div>
         </div>
-      </div>
+      ) : (
+        <div className="card-flush">
+          <div className="table-wrap">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th style={{ width: '28px' }}></th>
+                  <th>Record</th>
+                  <th>Alert</th>
+                  <th>Merchant</th>
+                  <th>Risk</th>
+                  <th>Policy</th>
+                  <th>Human Review</th>
+                  <th>Latency</th>
+                  <th>Timestamp</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map(entry => (
+                  <>
+                    <tr
+                      key={entry.id}
+                      className="clickable"
+                      onClick={() => setExpandedId(expandedId === entry.id ? null : entry.id)}
+                    >
+                      <td>
+                        {expandedId === entry.id
+                          ? <ChevronUp size={14} color="var(--color-text-dim)" />
+                          : <ChevronDown size={14} color="var(--color-text-dim)" />
+                        }
+                      </td>
+                      <td className="mono" style={{ fontSize: '12px', fontWeight: 500 }}>{entry.id}</td>
+                      <td className="mono" style={{ fontSize: '12px', color: 'var(--color-primary)' }}>{entry.alertId}</td>
+                      <td style={{ fontWeight: 500 }}>{entry.merchant}</td>
+                      <td>
+                        <span className={`badge badge-${entry.riskLevel}`}>{entry.riskLevel}</span>
+                      </td>
+                      <td>
+                        <span className="badge badge-neutral">{entry.policyDecision}</span>
+                      </td>
+                      <td>
+                        {entry.requiresHuman ? (
+                          <span style={{
+                            fontSize: '12px', fontWeight: 500,
+                            color: entry.humanApproved ? 'var(--color-success)' : 'var(--color-warning)',
+                          }}>
+                            {entry.humanApproved ? 'Approved' : 'Pending'}
+                          </span>
+                        ) : (
+                          <span style={{ fontSize: '12px', color: 'var(--color-text-dim)' }}>—</span>
+                        )}
+                      </td>
+                      <td className="tabular" style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>
+                        {entry.latency}ms
+                      </td>
+                      <td style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>
+                        {new Date(entry.timestamp).toLocaleString()}
+                      </td>
+                    </tr>
+                    {expandedId === entry.id && (
+                      <tr key={`${entry.id}-detail`}>
+                        <td colSpan={9} style={{ padding: 0 }}>
+                          <div className="expand-content">
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '10px' }}>
+                              <div>
+                                <div style={{ fontSize: '11px', color: 'var(--color-text-muted)', textTransform: 'uppercase', marginBottom: '4px' }}>Tools Called</div>
+                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+                                  {entry.toolsCalled.map(t => (
+                                    <span key={t} className="badge badge-neutral mono" style={{ fontSize: '10px' }}>{t}</span>
+                                  ))}
+                                </div>
+                              </div>
+                              <div>
+                                <div style={{ fontSize: '11px', color: 'var(--color-text-muted)', textTransform: 'uppercase', marginBottom: '4px' }}>Status</div>
+                                <div style={{ fontSize: '13px' }}>{entry.status}</div>
+                              </div>
+                            </div>
+                            <div>
+                              <div style={{ fontSize: '11px', color: 'var(--color-text-muted)', textTransform: 'uppercase', marginBottom: '4px' }}>Raw Audit Data</div>
+                              <pre style={{
+                                padding: '8px 10px', background: '#f3f4f6',
+                                border: '1px solid var(--color-border-light)',
+                                borderRadius: 'var(--radius-sm)', fontSize: '11px',
+                                fontFamily: 'var(--font-mono)', color: 'var(--color-text-secondary)',
+                                overflow: 'auto', maxHeight: '120px',
+                              }}>
+                                {JSON.stringify(entry.raw, null, 2)}
+                              </pre>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -21,23 +21,23 @@ from backend.app.api.routes import router as api_router
 async def lifespan(app: FastAPI):
     """Application startup and shutdown."""
     # Startup
-    print(f"🛡️  Starting {settings.app_name} in {settings.app_mode.value} mode")
+    print(f"[*] Starting {settings.app_name} in {settings.app_mode.value} mode")
 
     # Initialize database (dev convenience)
     try:
         from backend.app.db.database import init_db
         await init_db()
-        print("✓ Database tables initialized")
+        print("[+] Database tables initialized")
     except Exception as e:
-        print(f"⚠ Database init skipped: {e}")
+        print(f"[-] Database init skipped: {e}")
 
     # Load ML model
     try:
         from backend.app.risk.inference.engine import risk_engine
         risk_engine.load()
-        print(f"✓ ML model loaded: {risk_engine.model_version}")
+        print(f"[+] ML model loaded: {risk_engine.model_version}")
     except Exception as e:
-        print(f"⚠ ML model not loaded: {e}")
+        print(f"[-] ML model not loaded: {e}")
 
     yield
 
@@ -47,7 +47,7 @@ async def lifespan(app: FastAPI):
         await close_db()
     except Exception:
         pass
-    print(f"🛡️  {settings.app_name} shut down")
+    print(f"[*] {settings.app_name} shut down")
 
 
 app = FastAPI(
