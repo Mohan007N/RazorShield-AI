@@ -49,12 +49,42 @@ async def verify_api_key(x_api_key: str = Header(default="", alias="X-API-Key"))
 @router.post("/transactions", response_model=dict)
 async def create_transaction(txn: TransactionCreate, _auth=Depends(verify_api_key)):
     """Ingest a new transaction and process through the risk pipeline."""
+    from backend.app.core.config import settings
+    from backend.app.events.producer import event_producer
     from backend.app.integrations.synthetic.provider import synthetic_provider
     from backend.app.risk.anomaly.detector import MerchantAnomalyDetector
 
     txn_id = f"tx_{uuid.uuid4().hex[:8]}"
     now = datetime.utcnow()
 
+    # If Kafka is enabled, publish event and return immediately (async processing)
+    if settings.kafka_enabled:
+        published = await event_producer.publish_payment_event(
+            transaction_id=txn_id,
+            merchant_id=txn.merchant_id,
+            amount=txn.amount,
+            currency=txn.currency,
+            payment_method=txn.payment_method,
+            customer_id=txn.customer_id,
+            device_id=txn.device_id,
+            location=txn.location,
+            status=txn.status,
+            timestamp=now,
+        )
+
+        if published:
+            return {
+                "transaction_id": txn_id,
+                "merchant_id": txn.merchant_id,
+                "timestamp": now.isoformat(),
+                "status": "queued_for_processing",
+                "message": "Transaction queued for async risk assessment",
+            }
+        else:
+            # Fallback to sync processing if Kafka publish fails
+            pass
+
+    # Synchronous processing (fallback or when Kafka is disabled)
     normalized = NormalizedTransaction(
         transaction_id=txn_id,
         merchant_id=txn.merchant_id,
@@ -82,7 +112,7 @@ async def create_transaction(txn: TransactionCreate, _auth=Depends(verify_api_ke
         "transaction_id": txn_id,
         "merchant_id": txn.merchant_id,
         "timestamp": now.isoformat(),
-        "status": "processed",
+        "status": "processed_sync",
         "risk_assessment": {
             "anomaly_score": anomaly.anomaly_score,
             "spike_severity": anomaly.spike_severity,

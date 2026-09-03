@@ -94,6 +94,81 @@ services:
       KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+    healthcheck:
+      test: ["CMD", "kafka-broker-api-versions", "--bootstrap-server", "localhost:9092"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+    profiles:
+      - scalable
+
+  # ── Risk Worker (scalable mode) ───────────────────────────
+  risk-worker:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/Dockerfile.backend
+    command: python -m backend.app.workers.run_risk_worker
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://razorshield:razorshield@postgres:5432/razorshield
+      - DATABASE_SYNC_URL=postgresql://razorshield:razorshield@postgres:5432/razorshield
+      - REDIS_URL=redis://redis:6379/0
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:29092
+      - NO_KAFKA=false
+      - APP_MODE=scalable
+    env_file:
+      - .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    restart: unless-stopped
+    profiles:
+      - scalable
+
+  # ── Analytics Worker (scalable mode) ──────────────────────
+  analytics-worker:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/Dockerfile.backend
+    command: python -m backend.app.workers.run_analytics_worker
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://razorshield:razorshield@postgres:5432/razorshield
+      - DATABASE_SYNC_URL=postgresql://razorshield:razorshield@postgres:5432/razorshield
+      - REDIS_URL=redis://redis:6379/0
+      - APP_MODE=scalable
+    env_file:
+      - .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    profiles:
+      - scalable
+
+  # ── Audit Worker (scalable mode) ──────────────────────────
+  audit-worker:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/Dockerfile.backend
+    command: python -m backend.app.workers.run_audit_worker
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://razorshield:razorshield@postgres:5432/razorshield
+      - DATABASE_SYNC_URL=postgresql://razorshield:razorshield@postgres:5432/razorshield
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:29092
+      - NO_KAFKA=false
+      - APP_MODE=scalable
+    env_file:
+      - .env
+    depends_on:
+      kafka:
+        condition: service_healthy
+    restart: unless-stopped
     profiles:
       - scalable
 

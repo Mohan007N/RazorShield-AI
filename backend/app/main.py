@@ -39,9 +39,27 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         print(f"[-] ML model not loaded: {e}")
 
+    # Start Kafka event producer
+    if settings.kafka_enabled:
+        try:
+            from backend.app.events.producer import event_producer
+            await event_producer.start()
+            print(f"[+] Kafka producer started: {settings.kafka_bootstrap_servers}")
+        except Exception as e:
+            print(f"[-] Kafka producer not started: {e}")
+    else:
+        print("[*] Kafka disabled - running in synchronous mode")
+
     yield
 
     # Shutdown
+    if settings.kafka_enabled:
+        try:
+            from backend.app.events.producer import event_producer
+            await event_producer.stop()
+        except Exception:
+            pass
+
     try:
         from backend.app.db.database import close_db
         await close_db()
