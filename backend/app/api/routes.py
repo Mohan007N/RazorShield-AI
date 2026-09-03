@@ -44,6 +44,30 @@ async def verify_api_key(x_api_key: str = Header(default="", alias="X-API-Key"))
     return True
 
 
+# ── Webhooks ─────────────────────────────────────────────────────
+
+@router.post("/webhooks/razorpay")
+async def razorpay_webhook(request: Request):
+    """
+    Receive Razorpay webhook events.
+    
+    This endpoint receives payment events from Razorpay and processes them
+    through the fraud detection pipeline.
+    
+    No API key required (signature verification used instead).
+    """
+    from backend.app.integrations.razorpay.webhook_handler import webhook_handler
+    
+    try:
+        result = await webhook_handler.handle_webhook(request)
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Webhook processing error: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Webhook processing failed")
+
+
 # ── Transactions ─────────────────────────────────────────────────
 
 @router.post("/transactions", response_model=dict)
