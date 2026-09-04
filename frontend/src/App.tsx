@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, NavLink, useLocation, useNavigate, Navigate } from 'react-router-dom';
 import {
-  Shield, Activity, AlertTriangle, BarChart3, FileText, ChevronDown,
+  Activity, AlertTriangle, BarChart3, FileText, ChevronDown,
   Bell, LayoutDashboard, Sliders, LogOut, Check,
   Sparkles, ExternalLink, Zap
 } from 'lucide-react';
@@ -13,7 +13,7 @@ import ModelPerformance from './pages/ModelPerformance';
 import AuditTrail from './pages/AuditTrail';
 import Settings from './pages/Settings';
 import Login from './pages/Login';
-import './App.css';
+import { RazorShieldLogo } from './components/Logo';
 
 const navItems = [
   { path: '/', icon: LayoutDashboard, label: 'Overview' },
@@ -340,23 +340,7 @@ function MainLayout() {
     <div className="app-layout">
       <aside className="sidebar">
         <div className="sidebar-header">
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <div style={{
-              width: '28px', height: '28px', background: 'linear-gradient(135deg, #2563eb, #1d4ed8)',
-              borderRadius: '6px', display: 'flex', alignItems: 'center',
-              justifyContent: 'center', boxShadow: '0 2px 6px rgba(37,99,235,0.3)',
-            }}>
-              <Shield size={16} color="#fff" />
-            </div>
-            <div>
-              <div style={{ fontWeight: 700, fontSize: '14px', color: 'var(--color-text)', lineHeight: 1.2 }}>
-                RazorShield
-              </div>
-              <div style={{ fontSize: '10px', color: 'var(--color-text-muted)', fontWeight: 500 }}>
-                AI Risk Operations
-              </div>
-            </div>
-          </div>
+          <RazorShieldLogo variant="full" size={30} />
         </div>
 
         {/* Active Merchant Workspace Mini-badge */}

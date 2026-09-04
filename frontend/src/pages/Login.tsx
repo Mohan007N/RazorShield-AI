@@ -1,7 +1,8 @@
 import { useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Shield, Lock, Mail, ArrowRight, Eye, EyeOff, CheckCircle2, Zap, UserCheck } from 'lucide-react';
+import { Lock, Mail, ArrowRight, Eye, EyeOff, CheckCircle2, Zap, UserCheck, Shield } from 'lucide-react';
 import { useAuth, DEMO_PERSONAS } from '../context/AuthContext';
+import { RazorShieldIcon } from '../components/Logo';
 
 export default function Login() {
   const navigate = useNavigate();
@@ -48,16 +49,25 @@ export default function Login() {
       <div className="login-card-wrapper animate-fade-in">
         {/* Brand Header */}
         <div className="login-brand-header">
-          <div className="login-logo-badge">
-            <Shield size={24} color="#fff" />
+          <div className="login-logo-badge" style={{ background: 'transparent', boxShadow: 'none', width: 'auto', height: 'auto' }}>
+            <RazorShieldIcon size={44} />
           </div>
           <div>
-            <div className="login-brand-title">RazorShield</div>
-            <div className="login-brand-subtitle">AI Risk Manager</div>
+            <div className="login-brand-title" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span>RazorShield</span>
+              <span style={{
+                fontSize: '11px', fontWeight: 800, color: '#fff',
+                background: 'linear-gradient(135deg, #2563EB, #0284C7)',
+                padding: '2px 6px', borderRadius: '4px', letterSpacing: '0.04em',
+              }}>
+                AI
+              </span>
+            </div>
+            <div className="login-brand-subtitle">Autonomous Risk Engine</div>
           </div>
           <div className="login-status-pill">
             <span className="status-dot status-dot-success pulse-dot" />
-            <span>XGBoost v1.0 Online</span>
+            <span>XGBoost Online</span>
           </div>
         </div>
 
