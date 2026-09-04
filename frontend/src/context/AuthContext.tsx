@@ -1,15 +1,20 @@
 import { createContext, useContext, useState, useEffect, type ReactNode } from 'react';
 
+export type UserRole = 'analyst' | 'risk_manager' | 'admin';
+
 export interface User {
   id: string;
   name: string;
   email: string;
-  role: string;
+  role: UserRole;
+  roleTitle: string;
   avatar?: string;
   initials: string;
   merchantId: string;
   merchantName: string;
   merchantTier: string;
+  permissions: string[];
+  token?: string;
 }
 
 export interface Merchant {
@@ -76,39 +81,45 @@ export const MERCHANTS: Merchant[] = [
   },
 ];
 
-export const DEMO_PERSONAS = [
+export const DEMO_PERSONAS: (Omit<User, 'token'> & { description: string })[] = [
   {
-    id: 'user_01',
+    id: 'usr_mohan_001',
     name: 'Mohan Kumar',
     email: 'mohan.k@abcelectronics.com',
-    role: 'Risk Operations Lead',
+    role: 'admin',
+    roleTitle: 'Risk Operations Lead (Admin)',
     initials: 'MK',
     merchantId: 'merchant_001',
     merchantName: 'ABC Electronics Pvt Ltd',
     merchantTier: 'Tier 1 (High Velocity)',
-    description: 'Full administrative access to risk policies, automated gates & live actions.',
+    permissions: ['*'],
+    description: 'Full administrative authority over risk policies, automated gates & live actions.',
   },
   {
-    id: 'user_02',
+    id: 'usr_sarah_002',
     name: 'Sarah Verma',
     email: 'sarah.v@abcelectronics.com',
-    role: 'Senior Fraud Analyst',
+    role: 'risk_manager',
+    roleTitle: 'Senior Fraud Analyst (Risk Manager)',
     initials: 'SV',
     merchantId: 'merchant_001',
     merchantName: 'ABC Electronics Pvt Ltd',
     merchantTier: 'Tier 1 (High Velocity)',
-    description: 'Triage live anomalies, run agent investigations & review flagged spikes.',
+    permissions: ['alerts:read', 'investigate:run', 'evidence:read', 'shap:read', 'action:approve', 'action:reject'],
+    description: 'Investigate live anomalies, inspect SHAP, and digitally sign off on gated actions.',
   },
   {
-    id: 'user_03',
+    id: 'usr_arun_003',
     name: 'Arun Nair',
     email: 'arun.n@apexretail.in',
-    role: 'Head of Compliance & Risk',
+    role: 'analyst',
+    roleTitle: 'Compliance & Risk Analyst',
     initials: 'AN',
     merchantId: 'merchant_004',
     merchantName: 'Apex Luxury Retail',
     merchantTier: 'Tier 2 (High Ticket)',
-    description: 'Oversees SOC-2 / PCI audit trails, model performance benchmarks & KYC.',
+    permissions: ['alerts:read', 'investigate:read', 'evidence:read', 'shap:read'],
+    description: 'View-only investigation & compliance audit inspection.',
   },
 ];
 
@@ -133,7 +144,10 @@ interface AuthContextType {
   activeMerchant: Merchant;
   allMerchants: Merchant[];
   riskPolicy: RiskPolicyConfig;
-  login: (email: string, password?: string) => boolean;
+  hasPermission: (permission: string) => boolean;
+  canApproveActions: boolean;
+  canEditPolicies: boolean;
+  login: (email: string, password?: string) => Promise<boolean>;
   loginAsPersona: (personaId: string) => void;
   logout: () => void;
   switchMerchant: (merchantId: string) => void;
@@ -143,8 +157,8 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-const AUTH_STORAGE_KEY = 'razorshield_auth_user';
-const POLICY_STORAGE_KEY = 'razorshield_risk_policy';
+const AUTH_STORAGE_KEY = 'razorshield_auth_user_v2';
+const POLICY_STORAGE_KEY = 'razorshield_risk_policy_v2';
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(() => {
@@ -154,16 +168,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch {
       // fallback
     }
-    // Default demo user logged in for immediate hackathon view
+    // Default active persona: Admin (Mohan Kumar)
     return {
-      id: DEMO_PERSONAS[0].id,
-      name: DEMO_PERSONAS[0].name,
-      email: DEMO_PERSONAS[0].email,
-      role: DEMO_PERSONAS[0].role,
-      initials: DEMO_PERSONAS[0].initials,
-      merchantId: DEMO_PERSONAS[0].merchantId,
-      merchantName: DEMO_PERSONAS[0].merchantName,
-      merchantTier: DEMO_PERSONAS[0].merchantTier,
+      ...DEMO_PERSONAS[0],
+      token: 'demo-jwt-token-admin',
     };
   });
 
@@ -193,50 +201,57 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const activeMerchant = allMerchants.find(m => m.id === (user?.merchantId || 'merchant_001')) || allMerchants[0];
 
-  const login = (email: string, _password?: string): boolean => {
-    // Check if matching any demo persona
-    const foundPersona = DEMO_PERSONAS.find(p => p.email.toLowerCase() === email.toLowerCase());
-    if (foundPersona) {
-      setUser({
-        id: foundPersona.id,
-        name: foundPersona.name,
-        email: foundPersona.email,
-        role: foundPersona.role,
-        initials: foundPersona.initials,
-        merchantId: foundPersona.merchantId,
-        merchantName: foundPersona.merchantName,
-        merchantTier: foundPersona.merchantTier,
+  const hasPermission = (perm: string): boolean => {
+    if (!user) return false;
+    if (user.permissions.includes('*') || user.role === 'admin') return true;
+    return user.permissions.includes(perm);
+  };
+
+  const canApproveActions = user?.role === 'admin' || user?.role === 'risk_manager';
+  const canEditPolicies = user?.role === 'admin';
+
+  const login = async (email: string, password?: string): Promise<boolean> => {
+    try {
+      // Try backend JWT auth endpoint
+      const res = await fetch('/api/v1/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password: password || 'password123' }),
       });
-      return true;
+
+      if (res.ok) {
+        const data = await res.json();
+        const role = data.user.role as UserRole;
+        const roleTitle = role === 'admin' ? 'Risk Operations Lead (Admin)' : role === 'risk_manager' ? 'Risk Manager' : 'Fraud Analyst';
+        setUser({
+          id: data.user.id,
+          name: data.user.name,
+          email: data.user.email,
+          role: role,
+          roleTitle,
+          initials: data.user.name.slice(0, 2).toUpperCase(),
+          merchantId: data.user.merchant_id,
+          merchantName: data.user.merchant_name,
+          merchantTier: 'Tier 1 (High Velocity)',
+          permissions: data.user.permissions,
+          token: data.access_token,
+        });
+        return true;
+      }
+    } catch {
+      // Fallback local logic
     }
 
-    // Custom merchant user
-    const username = email.split('@')[0] || 'Merchant';
-    const initials = username.slice(0, 2).toUpperCase();
-    setUser({
-      id: `usr_${Math.random().toString(36).slice(2, 7)}`,
-      name: username.charAt(0).toUpperCase() + username.slice(1),
-      email,
-      role: 'Merchant Risk Manager',
-      initials,
-      merchantId: 'merchant_001',
-      merchantName: 'ABC Electronics Pvt Ltd',
-      merchantTier: 'Tier 1 (High Velocity)',
-    });
+    const found = DEMO_PERSONAS.find(p => p.email.toLowerCase() === email.toLowerCase()) || DEMO_PERSONAS[0];
+    setUser({ ...found, token: `jwt-${found.id}` });
     return true;
   };
 
   const loginAsPersona = (personaId: string) => {
     const persona = DEMO_PERSONAS.find(p => p.id === personaId) || DEMO_PERSONAS[0];
     setUser({
-      id: persona.id,
-      name: persona.name,
-      email: persona.email,
-      role: persona.role,
-      initials: persona.initials,
-      merchantId: persona.merchantId,
-      merchantName: persona.merchantName,
-      merchantTier: persona.merchantTier,
+      ...persona,
+      token: `jwt-${persona.id}`,
     });
   };
 
@@ -278,6 +293,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         activeMerchant,
         allMerchants,
         riskPolicy,
+        hasPermission,
+        canApproveActions,
+        canEditPolicies,
         login,
         loginAsPersona,
         logout,

@@ -11,8 +11,12 @@ import logging
 from datetime import datetime
 from typing import Any, Optional
 
-from aiokafka import AIOKafkaProducer
-from aiokafka.errors import KafkaError
+try:
+    from aiokafka import AIOKafkaProducer
+    from aiokafka.errors import KafkaError
+except ImportError:
+    AIOKafkaProducer = None
+    KafkaError = Exception
 
 from backend.app.core.config import settings
 

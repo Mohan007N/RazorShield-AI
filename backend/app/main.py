@@ -47,8 +47,13 @@ async def lifespan(app: FastAPI):
             print(f"[+] Kafka producer started: {settings.kafka_bootstrap_servers}")
         except Exception as e:
             print(f"[-] Kafka producer not started: {e}")
-    else:
-        print("[*] Kafka disabled - running in synchronous mode")
+    # Start WebSocket background telemetry
+    try:
+        from backend.app.events.websocket_manager import ws_manager
+        ws_manager.start_background_telemetry()
+        print("[+] WebSocket background telemetry broadcaster active")
+    except Exception as e:
+        print(f"[-] WebSocket telemetry broadcaster not started: {e}")
 
     yield
 

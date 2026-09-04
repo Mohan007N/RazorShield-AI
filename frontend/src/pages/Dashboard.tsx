@@ -3,18 +3,23 @@ import { useNavigate } from 'react-router-dom';
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from 'recharts';
-import { AlertTriangle, RefreshCw, Search, Shield, Zap, ArrowUpRight, TrendingUp, Sliders } from 'lucide-react';
+import {
+  AlertTriangle, RefreshCw, Search, Shield, Zap, ArrowUpRight,
+  TrendingUp, Radio, Activity, Server, Clock
+} from 'lucide-react';
 import { api, type Alert } from '../services/api';
 import { useAuth } from '../context/AuthContext';
+import { useWebSocket } from '../services/useWebSocket';
+import FraudSimulator from '../components/FraudSimulator';
 
-const generateTimelineData = (baseRate: number) => {
+const generateTimelineData = (baseRate: number, multiplier = 1) => {
   const data = [];
   for (let i = 0; i < 30; i++) {
     let rate: number;
     if (i < 20) {
       rate = baseRate + Math.random() * 20 - 10;
     } else {
-      rate = baseRate * (3.5 + Math.random() * 5.2);
+      rate = baseRate * (multiplier > 1 ? multiplier : 3.5 + Math.random() * 5.2);
     }
     data.push({
       time: `${14 + Math.floor(i / 60)}:${String(i % 60).padStart(2, '0')}`,
@@ -28,12 +33,14 @@ const generateTimelineData = (baseRate: number) => {
 export default function Dashboard() {
   const navigate = useNavigate();
   const { activeMerchant, riskPolicy } = useAuth();
+  const { isConnected, telemetry } = useWebSocket();
 
   const [alerts, setAlerts] = useState<Alert[]>([]);
   const [timelineData, setTimelineData] = useState(() => generateTimelineData(activeMerchant.baselineRate));
   const [loading, setLoading] = useState(false);
   const [searchFilter, setSearchFilter] = useState('');
   const [timeRange, setTimeRange] = useState<'1H' | '24H' | '7D'>('1H');
+  const [showSimulator, setShowSimulator] = useState(false);
 
   useEffect(() => {
     setTimelineData(generateTimelineData(activeMerchant.baselineRate));
@@ -64,15 +71,72 @@ export default function Dashboard() {
 
   return (
     <div className="animate-fade-in">
+      {/* Real-time Production Telemetry HUD */}
+      <div style={{
+        display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '8px',
+        background: 'var(--color-surface)', border: '1px solid var(--color-border)',
+        borderRadius: '8px', padding: '10px 14px', marginBottom: '16px',
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <Radio size={14} color={isConnected ? 'var(--color-success)' : 'var(--color-warning)'} className={isConnected ? 'pulse-dot' : ''} />
+          <div>
+            <div style={{ fontSize: '10px', color: 'var(--color-text-dim)', textTransform: 'uppercase' }}>STREAM FEED</div>
+            <div style={{ fontSize: '12px', fontWeight: 700, color: isConnected ? 'var(--color-success)' : 'var(--color-warning)' }}>
+              {isConnected ? 'LIVE WEBSOCKET' : 'CONNECTING...'}
+            </div>
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', borderLeft: '1px solid var(--color-border-light)', paddingLeft: '10px' }}>
+          <Activity size={14} color="var(--color-primary)" />
+          <div>
+            <div style={{ fontSize: '10px', color: 'var(--color-text-dim)', textTransform: 'uppercase' }}>THROUGHPUT</div>
+            <div className="mono" style={{ fontSize: '12px', fontWeight: 700 }}>
+              {telemetry.events_per_sec.toLocaleString()} txns/s
+            </div>
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', borderLeft: '1px solid var(--color-border-light)', paddingLeft: '10px' }}>
+          <AlertTriangle size={14} color="var(--color-danger)" />
+          <div>
+            <div style={{ fontSize: '10px', color: 'var(--color-text-dim)', textTransform: 'uppercase' }}>ALERTS / MIN</div>
+            <div className="mono" style={{ fontSize: '12px', fontWeight: 700, color: 'var(--color-danger)' }}>
+              {telemetry.alerts_per_min}
+            </div>
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', borderLeft: '1px solid var(--color-border-light)', paddingLeft: '10px' }}>
+          <Server size={14} color="var(--color-primary)" />
+          <div>
+            <div style={{ fontSize: '10px', color: 'var(--color-text-dim)', textTransform: 'uppercase' }}>KAFKA LAG</div>
+            <div className="mono" style={{ fontSize: '12px', fontWeight: 700 }}>
+              {telemetry.kafka_lag_ms}ms
+            </div>
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', borderLeft: '1px solid var(--color-border-light)', paddingLeft: '10px' }}>
+          <Clock size={14} color="var(--color-success)" />
+          <div>
+            <div style={{ fontSize: '10px', color: 'var(--color-text-dim)', textTransform: 'uppercase' }}>MODEL INFERENCE</div>
+            <div className="mono" style={{ fontSize: '12px', fontWeight: 700, color: 'var(--color-success)' }}>
+              {telemetry.model_inference_ms}ms (XGBoost)
+            </div>
+          </div>
+        </div>
+      </div>
+
       {/* Header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '12px' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '12px' }}>
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
             <h1 className="page-title">Risk Operations Center</h1>
             <span className="badge badge-success" style={{ fontSize: '11px' }}>{activeMerchant.name}</span>
           </div>
           <div className="page-subtitle" style={{ marginTop: '2px' }}>
-            Autonomous fraud defense, velocity spike triage, and model policy enforcement.
+            Real-time fraud spike triage, SHAP explainability, and deterministic policy enforcement.
           </div>
         </div>
 
@@ -81,16 +145,28 @@ export default function Dashboard() {
             <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
             Refresh Feed
           </button>
-          <button className="btn btn-secondary" onClick={() => navigate('/settings')}>
-            <Sliders size={14} />
-            Risk Policies
-          </button>
-          <button className="btn btn-primary" onClick={() => navigate('/investigation')}>
+          <button
+            className={`btn ${showSimulator ? 'btn-primary' : 'btn-secondary'}`}
+            onClick={() => setShowSimulator(!showSimulator)}
+          >
             <Zap size={14} />
-            Simulate Attack Spike
+            {showSimulator ? 'Hide Attack Simulator' : 'Interactive Attack Simulator'}
           </button>
         </div>
       </div>
+
+      {/* Embedded Fraud Simulator */}
+      {showSimulator && (
+        <div style={{ marginBottom: '16px' }}>
+          <FraudSimulator onAttackStateChange={(active) => {
+            if (active) {
+              setTimelineData(generateTimelineData(activeMerchant.baselineRate, 7.4));
+            } else {
+              setTimelineData(generateTimelineData(activeMerchant.baselineRate, 1));
+            }
+          }} />
+        </div>
+      )}
 
       {/* KPI Strip */}
       <div className="kpi-strip" style={{ marginBottom: '16px' }}>
@@ -154,7 +230,7 @@ export default function Dashboard() {
               Real-Time Transaction Velocity & Anomaly Boundary
             </h2>
             <div style={{ fontSize: '11px', color: 'var(--color-text-muted)', marginTop: '2px' }}>
-              Comparing live merchant transaction rate against established 30-day baseline model.
+              Comparing live Kafka stream against established 30-day baseline model.
             </div>
           </div>
 
@@ -241,7 +317,7 @@ export default function Dashboard() {
               Merchant traffic is operating comfortably within safe velocity limits.
             </div>
             <button className="btn btn-primary" style={{ marginTop: '12px' }} onClick={() => navigate('/investigation')}>
-              Simulate Defensive Test Spike
+              Launch Test Investigation
             </button>
           </div>
         ) : (
