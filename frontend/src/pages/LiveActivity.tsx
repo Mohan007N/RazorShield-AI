@@ -287,11 +287,11 @@ export default function LiveActivity() {
               </tr>
             </thead>
             <tbody>
-              {filtered.map(t => {
+              {filtered.map((t, idx) => {
                 const isWebhook = t.source === 'razorpay_webhook';
                 return (
                   <tr
-                    key={t.id}
+                    key={`${t.id}-${idx}`}
                     className={`clickable ${isWebhook ? 'row-webhook-highlight' : ''}`}
                     onClick={() => setSelected(t)}
                     style={{
