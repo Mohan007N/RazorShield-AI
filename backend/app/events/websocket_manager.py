@@ -57,7 +57,7 @@ class WebSocketManager:
             return
 
         dead_connections = set()
-        for connection in self.active_connections:
+        for connection in list(self.active_connections):
             try:
                 await connection.send_json(message)
             except Exception:
@@ -93,8 +93,10 @@ class WebSocketManager:
             self._telemetry_task = asyncio.create_task(self._telemetry_loop())
 
     async def _telemetry_loop(self):
+        counter = 0
         while True:
             try:
+                counter += 1
                 base_tps = 1200 if not self.simulator_state["is_running"] else self.simulator_state["tps"]
                 jitter = random.randint(-40, 60)
                 telemetry = {
@@ -107,9 +109,32 @@ class WebSocketManager:
                     "active_clients": len(self.active_connections),
                 }
                 await self.broadcast_telemetry(telemetry)
+
+                # Broadcast live ambient transaction feed if clients are connected and simulator is idle
+                if self.active_connections and not self.simulator_state["is_running"]:
+                    is_suspicious = random.random() < 0.12
+                    risk_score = (0.68 + random.random() * 0.28) if is_suspicious else (random.random() * 0.25)
+                    risk_level = "critical" if risk_score > 0.85 else "high" if risk_score > 0.6 else "low"
+                    
+                    ambient_txn = {
+                        "id": f"TX-IN-{random.randint(10000, 99999)}",
+                        "merchant": random.choice(["merchant_001", "merchant_004", "merchant_008", "merchant_016"]),
+                        "amount": round(random.randint(45000, 92000) if is_suspicious else random.randint(150, 4800), 2),
+                        "method": random.choice(["UPI", "Card", "Netbanking", "Wallet"]),
+                        "customer": f"CUS-{random.randint(100, 999)}",
+                        "status": "failed" if is_suspicious and random.random() > 0.5 else "success",
+                        "risk": risk_level,
+                        "riskScore": round(risk_score, 3),
+                        "device": "Unknown Device (Spoofed Canvas)" if is_suspicious else "Verified iPhone 15 Pro",
+                        "velocity": round(random.uniform(4.2, 8.4) if is_suspicious else random.uniform(0.7, 1.4), 1),
+                        "time": time.strftime("%H:%M:%S"),
+                        "source": "live_feed",
+                    }
+                    await self.broadcast_transaction(ambient_txn)
+
             except Exception as e:
                 logger.error(f"Telemetry loop error: {e}")
-            await asyncio.sleep(1.8)
+            await asyncio.sleep(1.4)
 
     def start_simulator(self, attack_type: str, tps: int, fraud_rate: float, merchant_id: str = "merchant_001"):
         """Start streaming synthetic attack events."""
@@ -152,6 +177,7 @@ class WebSocketManager:
                     "device": "Unknown Device (Spoofed Canvas)" if is_fraud else "Verified iPhone 15 Pro",
                     "velocity": round(random.uniform(4.5, 9.2), 1) if is_fraud else round(random.uniform(0.8, 1.4), 1),
                     "time": time.strftime("%H:%M:%S"),
+                    "source": "simulator",
                 }
 
                 self.simulator_state["total_sent"] += 1
@@ -171,6 +197,8 @@ class WebSocketManager:
                         "status": "open",
                         "created_at": time.strftime("%Y-%m-%dT%H:%M:%S.000Z"),
                     }
+                    from backend.app.api.routes import _add_demo_alert
+                    _add_demo_alert(alert)
                     await self.broadcast_alert(alert)
 
             except asyncio.CancelledError:

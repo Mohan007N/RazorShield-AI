@@ -1,7 +1,8 @@
-import { useState, useEffect } from 'react';
+import { useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Pause, Play, Search, X, ArrowUpRight, PlusCircle } from 'lucide-react';
+import { Pause, Play, Search, X, Radio, Send, ShieldAlert, CheckCircle } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { useWebSocket, type StreamTransaction } from '../services/useWebSocket';
 
 interface Transaction {
   id: string;
@@ -15,29 +16,8 @@ interface Transaction {
   riskScore: number;
   device: string;
   velocity: number;
-}
-
-const METHODS = ['UPI', 'Card', 'Netbanking', 'Wallet'];
-const DEVICES = ['iPhone 15 Pro', 'Samsung Galaxy S24', 'Pixel 8', 'OnePlus 12', 'Unknown Device (Spoofed Canvas)'];
-
-function randomTxn(defaultMerchantId: string): Transaction {
-  const isRisky = Math.random() > 0.82;
-  const riskScore = isRisky ? 0.65 + Math.random() * 0.32 : Math.random() * 0.28;
-  return {
-    id: `TX-${Math.random().toString(36).slice(2, 8).toUpperCase()}`,
-    merchant: Math.random() > 0.3 ? defaultMerchantId : 'merchant_004',
-    amount: isRisky
-      ? Math.round(Math.random() * 85000 + 15000)
-      : Math.round(Math.random() * 4500 + 120),
-    method: METHODS[Math.floor(Math.random() * METHODS.length)],
-    customer: `CUS-${Math.floor(Math.random() * 999 + 100)}`,
-    status: Math.random() > (isRisky ? 0.4 : 0.02) ? 'success' : 'failed',
-    risk: riskScore > 0.85 ? 'critical' : riskScore > 0.6 ? 'high' : riskScore > 0.3 ? 'medium' : 'low',
-    time: new Date().toLocaleTimeString(),
-    riskScore,
-    device: isRisky ? 'Unknown Device (Spoofed Canvas)' : DEVICES[Math.floor(Math.random() * (DEVICES.length - 1))],
-    velocity: isRisky ? +(3.5 + Math.random() * 6.5).toFixed(1) : +(0.6 + Math.random() * 1.2).toFixed(1),
-  };
+  source?: string;
+  event_type?: string;
 }
 
 export default function LiveActivity() {
@@ -45,43 +25,126 @@ export default function LiveActivity() {
   const { activeMerchant } = useAuth();
 
   const [isPaused, setIsPaused] = useState(false);
-  const [streamSpeed, setStreamSpeed] = useState<number>(1400);
   const [search, setSearch] = useState('');
   const [methodFilter, setMethodFilter] = useState('ALL');
   const [riskFilter, setRiskFilter] = useState('ALL');
   const [selected, setSelected] = useState<Transaction | null>(null);
-  const [transactions, setTransactions] = useState<Transaction[]>(() =>
-    Array.from({ length: 25 }, () => randomTxn(activeMerchant.id))
-  );
+  const [sendingTest, setSendingTest] = useState(false);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (isPaused) return;
-    const interval = setInterval(() => {
-      setTransactions(prev => [randomTxn(activeMerchant.id), ...prev.slice(0, 49)]);
-    }, streamSpeed);
-    return () => clearInterval(interval);
-  }, [isPaused, streamSpeed, activeMerchant]);
-
-  const injectSuspiciousTxn = () => {
-    const injected: Transaction = {
-      id: `TX-ANOMALY-${Math.random().toString(36).slice(2, 6).toUpperCase()}`,
+  const [transactions, setTransactions] = useState<Transaction[]>([
+    {
+      id: 'pay_live_initial_01',
       merchant: activeMerchant.id,
-      amount: 94500,
+      amount: 7500.0,
       method: 'UPI',
-      customer: 'CUS-SUSPECT-99',
+      customer: 'Rahul S',
+      status: 'success',
+      risk: 'low',
+      riskScore: 0.12,
+      device: 'iPhone 15 Pro (Verified)',
+      velocity: 1.1,
+      time: new Date().toLocaleTimeString(),
+      source: 'live_feed',
+    },
+    {
+      id: 'pay_live_initial_02',
+      merchant: activeMerchant.id,
+      amount: 88500.0,
+      method: 'Card',
+      customer: 'Priya M',
       status: 'failed',
       risk: 'critical',
-      time: new Date().toLocaleTimeString(),
       riskScore: 0.94,
       device: 'Unknown Device (Spoofed Canvas)',
-      velocity: 8.4,
+      velocity: 7.8,
+      time: new Date().toLocaleTimeString(),
+      source: 'razorpay_webhook',
+    },
+  ]);
+
+  // Handle incoming real-time WebSocket transactions
+  const handleIncomingTxn = useCallback((txn: StreamTransaction) => {
+    if (isPaused) return;
+
+    const formattedTxn: Transaction = {
+      id: txn.id,
+      merchant: txn.merchant || activeMerchant.id,
+      amount: txn.amount,
+      method: txn.method || 'UPI',
+      customer: txn.customer || 'Customer',
+      status: txn.status || 'success',
+      risk: txn.risk || 'low',
+      riskScore: txn.riskScore || 0.1,
+      device: txn.device || 'Verified Mobile Device',
+      velocity: txn.velocity || 1.0,
+      time: txn.time || new Date().toLocaleTimeString(),
+      source: (txn as any).source || 'live_feed',
     };
-    setTransactions(prev => [injected, ...prev.slice(0, 49)]);
-    setSelected(injected);
+
+    setTransactions(prev => [formattedTxn, ...prev.slice(0, 99)]);
+
+    if ((txn as any).source === 'razorpay_webhook') {
+      showToast(`⚡ Live Webhook Event Received: ${txn.id} (₹${txn.amount})`);
+    }
+  }, [isPaused, activeMerchant]);
+
+  const { isConnected, telemetry } = useWebSocket(handleIncomingTxn);
+
+  const showToast = (msg: string) => {
+    setToastMessage(msg);
+    setTimeout(() => setToastMessage(null), 3500);
+  };
+
+  // Send a test Razorpay webhook event directly from the UI to test live real-time ingestion
+  const sendTestWebhook = async () => {
+    setSendingTest(true);
+    const testId = `pay_test_${Math.random().toString(36).slice(2, 7)}`;
+    const isRisky = Math.random() > 0.5;
+    const amountPaise = isRisky ? 9500000 : 150000;
+
+    try {
+      const res = await fetch('/api/v1/webhooks/razorpay', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Razorpay-Signature': 'dev_test_bypass',
+        },
+        body: JSON.stringify({
+          event: isRisky ? 'payment.failed' : 'payment.captured',
+          payload: {
+            payment: {
+              entity: {
+                id: testId,
+                amount: amountPaise,
+                currency: 'INR',
+                status: isRisky ? 'failed' : 'captured',
+                method: isRisky ? 'card' : 'upi',
+                email: 'customer.live@test.in',
+                contact: '+919988776655',
+                notes: { merchant_id: activeMerchant.id },
+                metadata: {
+                  device_id: isRisky ? 'Unknown Device (Spoofed Canvas)' : 'Samsung Galaxy S24',
+                  ip_address: '103.21.244.18',
+                },
+              },
+            },
+          },
+        }),
+      });
+
+      if (res.ok) {
+        showToast(`✅ Webhook sent & scored: ${testId} (₹${(amountPaise / 100).toLocaleString()})`);
+      }
+    } catch {
+      showToast('❌ Error sending webhook to backend');
+    } finally {
+      setSendingTest(false);
+    }
   };
 
   const filtered = transactions.filter(t => {
-    const matchMethod = methodFilter === 'ALL' || t.method === methodFilter;
+    const matchMethod = methodFilter === 'ALL' || t.method.toLowerCase() === methodFilter.toLowerCase();
     const matchRisk = riskFilter === 'ALL' || (riskFilter === 'FLAGGED' ? (t.risk === 'high' || t.risk === 'critical') : t.risk === riskFilter.toLowerCase());
     const matchSearch = !search || t.id.toLowerCase().includes(search.toLowerCase()) || t.merchant.toLowerCase().includes(search.toLowerCase()) || t.customer.toLowerCase().includes(search.toLowerCase());
     return matchMethod && matchRisk && matchSearch;
@@ -91,49 +154,77 @@ export default function LiveActivity() {
 
   return (
     <div className="animate-fade-in">
+      {/* Toast Banner */}
+      {toastMessage && (
+        <div style={{
+          position: 'fixed', top: '70px', right: '24px', zIndex: 1000,
+          background: '#1e293b', color: '#ffffff', padding: '10px 18px',
+          borderRadius: '8px', fontSize: '13px', fontWeight: 600,
+          boxShadow: '0 10px 25px rgba(0,0,0,0.2)', display: 'flex', alignItems: 'center', gap: '8px',
+          border: '1px solid #3b82f6',
+        }} className="animate-fade-in">
+          <CheckCircle size={15} color="#60a5fa" />
+          <span>{toastMessage}</span>
+        </div>
+      )}
+
       {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '12px' }}>
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
             <h1 className="page-title">Live Transaction Stream</h1>
-            <span className="badge badge-success" style={{ fontSize: '11px' }}>
-              <span className="status-dot status-dot-success pulse-dot" style={{ marginRight: '4px' }} />
-              Live Ingestion
+            <span className={`badge ${isConnected ? 'badge-success' : 'badge-warning'}`} style={{ fontSize: '11px', display: 'flex', alignItems: 'center', gap: '5px' }}>
+              <Radio size={12} className={isConnected ? 'pulse-dot' : ''} />
+              {isConnected ? 'Real-Time WebSocket Connected' : 'Connecting Stream...'}
             </span>
           </div>
           <div className="page-subtitle" style={{ marginTop: '2px' }}>
-            Real-time webhook and API transaction processing with millisecond-level XGBoost inference.
+            Streaming live transactions from Razorpay webhooks and internal APIs with millisecond-level XGBoost inference.
           </div>
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-          <button className="btn btn-secondary btn-sm" onClick={injectSuspiciousTxn}>
-            <PlusCircle size={13} color="var(--color-danger)" />
-            Inject Test Anomaly
+          <button className="btn btn-primary btn-sm" onClick={sendTestWebhook} disabled={sendingTest}>
+            <Send size={13} />
+            {sendingTest ? 'Sending Webhook...' : 'Send Live Test Webhook'}
           </button>
-
-          {/* Speed selector */}
-          <div style={{ display: 'flex', gap: '2px', background: 'var(--color-surface)', padding: '2px', borderRadius: '6px', border: '1px solid var(--color-border)' }}>
-            {[
-              { label: '1x', speed: 1400 },
-              { label: '2x', speed: 700 },
-              { label: '5x', speed: 300 },
-            ].map(s => (
-              <button
-                key={s.label}
-                className={`chip ${streamSpeed === s.speed ? 'active' : ''}`}
-                style={{ fontSize: '11px', padding: '2px 8px', border: 'none' }}
-                onClick={() => { setStreamSpeed(s.speed); setIsPaused(false); }}
-              >
-                {s.label}
-              </button>
-            ))}
-          </div>
 
           <button className="btn btn-secondary btn-sm" onClick={() => setIsPaused(!isPaused)}>
             {isPaused ? <Play size={13} /> : <Pause size={13} />}
-            {isPaused ? 'Resume' : 'Pause'}
+            {isPaused ? 'Resume Feed' : 'Pause Feed'}
           </button>
+        </div>
+      </div>
+
+      {/* Live Stream Telemetry HUD */}
+      <div style={{
+        display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '10px',
+        background: 'var(--color-surface)', border: '1px solid var(--color-border)',
+        borderRadius: '8px', padding: '12px 16px', marginBottom: '16px',
+      }}>
+        <div>
+          <div style={{ fontSize: '11px', color: 'var(--color-text-dim)', textTransform: 'uppercase' }}>STREAM THROUGHPUT</div>
+          <div className="mono" style={{ fontSize: '14px', fontWeight: 700, color: 'var(--color-text)', marginTop: '2px' }}>
+            {telemetry.events_per_sec.toLocaleString()} txns/s
+          </div>
+        </div>
+        <div>
+          <div style={{ fontSize: '11px', color: 'var(--color-text-dim)', textTransform: 'uppercase' }}>INFERENCE LATENCY</div>
+          <div className="mono" style={{ fontSize: '14px', fontWeight: 700, color: 'var(--color-primary)', marginTop: '2px' }}>
+            {telemetry.model_inference_ms} ms
+          </div>
+        </div>
+        <div>
+          <div style={{ fontSize: '11px', color: 'var(--color-text-dim)', textTransform: 'uppercase' }}>FLAGGED THREATS</div>
+          <div className="mono" style={{ fontSize: '14px', fontWeight: 700, color: highCount > 0 ? 'var(--color-danger)' : 'var(--color-success)', marginTop: '2px' }}>
+            {highCount} anomalies
+          </div>
+        </div>
+        <div>
+          <div style={{ fontSize: '11px', color: 'var(--color-text-dim)', textTransform: 'uppercase' }}>TOTAL IN MEMORY</div>
+          <div className="mono" style={{ fontSize: '14px', fontWeight: 700, color: 'var(--color-text)', marginTop: '2px' }}>
+            {transactions.length} captured
+          </div>
         </div>
       </div>
 
@@ -162,15 +253,15 @@ export default function LiveActivity() {
           ))}
         </div>
 
-        {/* Risk Level Chips */}
-        <div style={{ display: 'flex', gap: '4px', borderLeft: '1px solid var(--color-border)', paddingLeft: '8px' }}>
-          {['ALL', 'FLAGGED', 'CRITICAL', 'LOW'].map(r => (
+        {/* Risk Chips */}
+        <div style={{ display: 'flex', gap: '4px' }}>
+          {['ALL', 'FLAGGED', 'CRITICAL', 'HIGH', 'LOW'].map(r => (
             <button
               key={r}
               className={`chip ${riskFilter === r ? 'active' : ''}`}
               onClick={() => setRiskFilter(r)}
             >
-              {r === 'ALL' ? 'All Risk' : r === 'FLAGGED' ? `Flagged (${highCount})` : r}
+              {r}
             </button>
           ))}
         </div>
@@ -182,166 +273,162 @@ export default function LiveActivity() {
           <table className="data-table">
             <thead>
               <tr>
-                <th>Timestamp</th>
-                <th>Transaction ID</th>
-                <th>Amount</th>
-                <th>Payment Method</th>
-                <th>Customer / VPA</th>
-                <th>Risk Assessment</th>
-                <th>Gateway Status</th>
+                <th>Txn ID</th>
+                <th>Source</th>
+                <th>Merchant</th>
+                <th>Amount (INR)</th>
+                <th>Method</th>
+                <th>Customer</th>
+                <th>Device</th>
+                <th>Velocity</th>
+                <th>Risk Score</th>
+                <th>Status</th>
+                <th>Time</th>
               </tr>
             </thead>
             <tbody>
-              {filtered.map((txn, i) => (
-                <tr
-                  key={txn.id + i}
-                  className={`clickable ${i === 0 ? 'animate-slide-in' : ''}`}
-                  onClick={() => setSelected(txn)}
-                >
-                  <td style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>{txn.time}</td>
-                  <td className="mono" style={{ fontSize: '12px', color: 'var(--color-primary)', fontWeight: 600 }}>
-                    {txn.id}
-                  </td>
-                  <td className="tabular" style={{ fontWeight: 600 }}>
-                    ₹{txn.amount.toLocaleString('en-IN')}
-                  </td>
-                  <td>
-                    <span style={{ fontSize: '12px', fontWeight: 500 }}>{txn.method}</span>
-                  </td>
-                  <td className="mono" style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>{txn.customer}</td>
-                  <td>
-                    <span className={`badge badge-${txn.risk}`}>
-                      {(txn.riskScore * 100).toFixed(0)} · {txn.risk.toUpperCase()}
-                    </span>
-                  </td>
-                  <td>
-                    <span style={{
-                      display: 'inline-flex', alignItems: 'center', gap: '5px',
-                      fontSize: '12px', fontWeight: 600,
-                      color: txn.status === 'success' ? 'var(--color-success)' : 'var(--color-danger)',
-                    }}>
-                      <span className={`status-dot ${txn.status === 'success' ? 'status-dot-success' : 'status-dot-danger'}`} />
-                      {txn.status === 'success' ? 'Authorized' : 'Failed / Blocked'}
-                    </span>
-                  </td>
-                </tr>
-              ))}
+              {filtered.map(t => {
+                const isWebhook = t.source === 'razorpay_webhook';
+                return (
+                  <tr
+                    key={t.id}
+                    className={`clickable ${isWebhook ? 'row-webhook-highlight' : ''}`}
+                    onClick={() => setSelected(t)}
+                    style={{
+                      background: isWebhook ? 'rgba(37, 99, 235, 0.04)' : undefined,
+                    }}
+                  >
+                    <td className="mono" style={{ fontSize: '12px', fontWeight: 600, color: 'var(--color-primary)' }}>
+                      {t.id}
+                    </td>
+                    <td>
+                      {isWebhook ? (
+                        <span className="badge badge-info" style={{ fontSize: '10px', background: '#eff6ff', color: '#1d4ed8', border: '1px solid #bfdbfe' }}>
+                          ⚡ WEBHOOK
+                        </span>
+                      ) : (
+                        <span style={{ fontSize: '11px', color: 'var(--color-text-dim)' }}>Stream</span>
+                      )}
+                    </td>
+                    <td className="mono" style={{ fontSize: '12px' }}>{t.merchant}</td>
+                    <td className="mono" style={{ fontSize: '12px', fontWeight: 600 }}>
+                      ₹{t.amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                    </td>
+                    <td><span className="badge badge-neutral">{t.method}</span></td>
+                    <td style={{ fontSize: '12px' }}>{t.customer}</td>
+                    <td style={{ fontSize: '11px', color: 'var(--color-text-muted)', maxWidth: '160px' }} className="truncate">
+                      {t.device}
+                    </td>
+                    <td className="mono" style={{ fontSize: '12px', color: t.velocity > 4 ? 'var(--color-danger)' : 'inherit' }}>
+                      {t.velocity}×
+                    </td>
+                    <td>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <span className={`badge badge-${t.risk}`}>
+                          {t.risk.toUpperCase()}
+                        </span>
+                        <span className="mono" style={{ fontSize: '11px', color: 'var(--color-text-muted)' }}>
+                          {(t.riskScore * 100).toFixed(0)}%
+                        </span>
+                      </div>
+                    </td>
+                    <td>
+                      <span className={`badge ${t.status === 'success' ? 'badge-success' : 'badge-danger'}`}>
+                        {t.status}
+                      </span>
+                    </td>
+                    <td style={{ fontSize: '11px', color: 'var(--color-text-dim)' }}>{t.time}</td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
       </div>
 
-      {/* Transaction Detail Drawer */}
+      {/* Transaction Detail Slide-over / Modal */}
       {selected && (
-        <>
-          <div className="drawer-overlay" onClick={() => setSelected(null)} />
-          <div className="drawer animate-slide-in">
-            <div className="drawer-header">
+        <div style={{
+          position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)',
+          display: 'flex', justifyContent: 'flex-end', zIndex: 90,
+        }} onClick={() => setSelected(null)}>
+          <div style={{
+            width: '420px', background: 'var(--color-surface)', height: '100%',
+            padding: '24px', boxShadow: 'var(--shadow-lg)', overflowY: 'auto',
+          }} onClick={(e) => e.stopPropagation()} className="animate-slide-in">
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
               <div>
-                <div className="section-title" style={{ fontFamily: 'var(--font-mono)' }}>{selected.id}</div>
-                <div style={{ fontSize: '12px', color: 'var(--color-text-muted)', marginTop: '2px' }}>
-                  Live Transaction Explainability & Risk Breakdown
-                </div>
+                <div style={{ fontSize: '11px', color: 'var(--color-text-dim)', textTransform: 'uppercase' }}>Transaction Inspector</div>
+                <h3 className="mono" style={{ fontSize: '16px', fontWeight: 700, marginTop: '2px' }}>{selected.id}</h3>
               </div>
               <button className="btn btn-ghost" style={{ padding: '4px' }} onClick={() => setSelected(null)}>
                 <X size={16} />
               </button>
             </div>
 
-            <div className="drawer-body">
-              {/* Top Score Banner */}
-              <div style={{
-                padding: '12px', borderRadius: '8px', marginBottom: '16px',
-                background: selected.risk === 'critical' || selected.risk === 'high' ? 'var(--color-danger-bg)' : 'var(--color-surface-alt)',
-                border: `1px solid ${selected.risk === 'critical' || selected.risk === 'high' ? 'var(--color-danger-border)' : 'var(--color-border-light)'}`,
-                display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-              }}>
-                <div>
-                  <div style={{ fontSize: '11px', color: 'var(--color-text-muted)', textTransform: 'uppercase' }}>ML Risk Score</div>
-                  <div style={{ fontSize: '20px', fontWeight: 800, color: selected.risk === 'critical' || selected.risk === 'high' ? 'var(--color-danger)' : 'var(--color-success)' }}>
-                    {(selected.riskScore * 100).toFixed(0)} / 100
-                  </div>
-                </div>
-                <span className={`badge badge-${selected.risk}`} style={{ fontSize: '12px', padding: '4px 10px' }}>
-                  {selected.risk.toUpperCase()} RISK
-                </span>
-              </div>
-
-              {/* Transaction Properties */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '20px' }}>
-                {[
-                  ['Amount', `₹${selected.amount.toLocaleString('en-IN')}`],
-                  ['Gateway Status', selected.status === 'success' ? 'Authorized' : 'Failed / Blocked'],
-                  ['Payment Method', selected.method],
-                  ['Customer Identifier', selected.customer],
-                  ['Device Fingerprint', selected.device],
-                  ['Merchant MID', selected.merchant],
-                  ['Time of Ingestion', selected.time],
-                  ['Velocity Factor', `${selected.velocity}× Baseline`],
-                ].map(([label, value]) => (
-                  <div key={label}>
-                    <div style={{ fontSize: '11px', color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: '2px' }}>
-                      {label}
-                    </div>
-                    <div style={{ fontSize: '13px', fontWeight: 500, color: 'var(--color-text)' }}>
-                      {value}
-                    </div>
-                  </div>
-                ))}
-              </div>
-
-              {/* Explainability Radar Signals */}
-              <div style={{ marginBottom: '20px' }}>
-                <div className="section-title" style={{ marginBottom: '8px' }}>Feature Signals & SHAP Importance</div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                  {[
-                    ['Transaction Velocity Surge', `${selected.velocity}× normal baseline`, selected.velocity > 3],
-                    ['Amount Deviation from Median', selected.amount > 15000 ? `+${((selected.amount / 2200 - 1) * 100).toFixed(0)}% elevated` : 'Normal range', selected.amount > 15000],
-                    ['Device Spoofing / Canvas Anomaly', selected.device.includes('Unknown') ? 'Spoofed Canvas Detected' : 'Known Device Hash', selected.device.includes('Unknown')],
-                    ['Payment Routing Reliability', selected.method === 'UPI' ? 'UPI Fast Lane' : 'Standard 3DS', false],
-                  ].map(([label, value, flagged]) => (
-                    <div
-                      key={label as string}
-                      style={{
-                        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                        padding: '8px 10px', borderRadius: '4px',
-                        background: flagged ? 'var(--color-danger-bg)' : 'var(--color-surface-alt)',
-                        border: `1px solid ${flagged ? 'var(--color-danger-border)' : 'var(--color-border-light)'}`,
-                        fontSize: '12px',
-                      }}
-                    >
-                      <span style={{ color: 'var(--color-text-secondary)' }}>{label as string}</span>
-                      <span style={{ fontWeight: 600, color: flagged ? 'var(--color-danger)' : 'var(--color-text)' }}>
-                        {value as string}
-                      </span>
-                    </div>
-                  ))}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <div style={{ padding: '12px', background: 'var(--color-surface-alt)', borderRadius: '6px', border: '1px solid var(--color-border)' }}>
+                <div style={{ fontSize: '11px', color: 'var(--color-text-muted)' }}>Risk Assessment</div>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '6px' }}>
+                  <span className={`badge badge-${selected.risk}`} style={{ fontSize: '13px' }}>
+                    {selected.risk.toUpperCase()} RISK
+                  </span>
+                  <span className="mono" style={{ fontSize: '18px', fontWeight: 700 }}>
+                    {(selected.riskScore * 100).toFixed(1)}%
+                  </span>
                 </div>
               </div>
 
-              {/* Recommended Action & Triage button */}
-              <div style={{ borderTop: '1px solid var(--color-border-light)', paddingTop: '16px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <div>
-                    <div className="section-title" style={{ fontSize: '13px' }}>Autonomous Recommendation</div>
-                    <div style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>
-                      {selected.riskScore > 0.85 ? 'Block transaction and hold settlement' : selected.riskScore > 0.6 ? 'Route to Human Review Gate' : 'Auto-Allow transaction'}
-                    </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                <div style={{ padding: '10px', background: 'var(--color-surface-alt)', borderRadius: '6px' }}>
+                  <div style={{ fontSize: '10px', color: 'var(--color-text-dim)' }}>AMOUNT</div>
+                  <div className="mono" style={{ fontSize: '14px', fontWeight: 700, marginTop: '2px' }}>
+                    ₹{selected.amount.toLocaleString()}
                   </div>
-                  <button
-                    className="btn btn-primary btn-sm"
-                    onClick={() => {
-                      setSelected(null);
-                      navigate('/investigation');
-                    }}
-                  >
-                    Investigate Spike <ArrowUpRight size={13} />
-                  </button>
+                </div>
+                <div style={{ padding: '10px', background: 'var(--color-surface-alt)', borderRadius: '6px' }}>
+                  <div style={{ fontSize: '10px', color: 'var(--color-text-dim)' }}>METHOD</div>
+                  <div style={{ fontSize: '14px', fontWeight: 600, marginTop: '2px' }}>{selected.method}</div>
                 </div>
               </div>
+
+              <div style={{ padding: '12px', background: 'var(--color-surface-alt)', borderRadius: '6px' }}>
+                <div style={{ fontSize: '11px', color: 'var(--color-text-dim)', marginBottom: '4px' }}>DEVICE & NETWORK</div>
+                <div style={{ fontSize: '12px', fontWeight: 500 }}>{selected.device}</div>
+                <div style={{ fontSize: '11px', color: 'var(--color-text-muted)', marginTop: '4px' }}>
+                  Velocity: <span className="mono" style={{ fontWeight: 600 }}>{selected.velocity}× baseline</span>
+                </div>
+              </div>
+
+              <div style={{ padding: '12px', background: 'var(--color-surface-alt)', borderRadius: '6px' }}>
+                <div style={{ fontSize: '11px', color: 'var(--color-text-dim)', marginBottom: '4px' }}>INGESTION METADATA</div>
+                <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>
+                  Merchant: <span className="mono">{selected.merchant}</span>
+                </div>
+                <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', marginTop: '2px' }}>
+                  Customer: <span>{selected.customer}</span>
+                </div>
+                <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', marginTop: '2px' }}>
+                  Source: <span className="mono">{selected.source || 'live_feed'}</span>
+                </div>
+              </div>
+
+              {selected.riskScore > 0.6 && (
+                <button
+                  className="btn btn-primary"
+                  style={{ marginTop: '12px', justifyContent: 'center' }}
+                  onClick={() => {
+                    setSelected(null);
+                    navigate('/investigation');
+                  }}
+                >
+                  <ShieldAlert size={15} />
+                  Open Deep Investigation
+                </button>
+              )}
             </div>
           </div>
-        </>
+        </div>
       )}
     </div>
   );

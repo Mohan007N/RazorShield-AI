@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { BrowserRouter, Routes, Route, NavLink, useLocation, useNavigate, Navigate } from 'react-router-dom';
 import {
   Activity, AlertTriangle, BarChart3, FileText, ChevronDown,
@@ -6,6 +6,7 @@ import {
   Sparkles, ExternalLink, Zap
 } from 'lucide-react';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { useWebSocket, type StreamAlert } from './services/useWebSocket';
 import Dashboard from './pages/Dashboard';
 import LiveActivity from './pages/LiveActivity';
 import InvestigationPage from './pages/Investigation';
@@ -78,6 +79,22 @@ function TopNavbar() {
       unread: false,
     },
   ]);
+
+  const handleLiveAlert = useCallback((alert: StreamAlert) => {
+    setNotifications(prev => [
+      {
+        id: alert.id,
+        title: alert.summary || `Live Threat: Anomaly Flagged (${alert.spike_ratio}× velocity)`,
+        merchant: alert.merchant_id,
+        time: 'Just now',
+        severity: alert.risk_level === 'critical' ? 'critical' : 'high',
+        unread: true,
+      },
+      ...prev.slice(0, 19),
+    ]);
+  }, []);
+
+  useWebSocket(undefined, handleLiveAlert);
 
   const merchantRef = useRef<HTMLDivElement>(null);
   const notifRef = useRef<HTMLDivElement>(null);
