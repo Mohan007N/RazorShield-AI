@@ -104,6 +104,28 @@ async def add_timing_header(request: Request, call_next):
 
 
 # Health endpoints
+@app.get("/")
+async def root():
+    """Root endpoint providing service information and API links."""
+    return {
+        "service": settings.app_name,
+        "status": "online",
+        "version": "1.0.0",
+        "docs_url": "/docs",
+        "health_url": "/health",
+        "ready_url": "/ready",
+        "api_prefix": "/api/v1",
+        "mode": settings.app_mode.value,
+    }
+
+
+@app.get("/favicon.ico", include_in_schema=False)
+async def favicon():
+    """Favicon endpoint returning no-content."""
+    from fastapi import Response
+    return Response(status_code=204)
+
+
 @app.get("/health")
 async def health():
     """Basic health check."""

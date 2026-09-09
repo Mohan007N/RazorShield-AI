@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Fragment } from 'react';
 import { Search, ChevronDown, ChevronUp, Download, ShieldCheck, Lock } from 'lucide-react';
 
 interface CryptographicAuditEntry {
@@ -159,9 +159,8 @@ export default function AuditTrail() {
             </thead>
             <tbody>
               {filtered.map(entry => (
-                <>
+                <Fragment key={entry.id}>
                   <tr
-                    key={entry.id}
                     className="clickable"
                     onClick={() => setExpandedId(expandedId === entry.id ? null : entry.id)}
                   >
@@ -226,7 +225,7 @@ export default function AuditTrail() {
                       </td>
                     </tr>
                   )}
-                </>
+                </Fragment>
               ))}
             </tbody>
           </table>
