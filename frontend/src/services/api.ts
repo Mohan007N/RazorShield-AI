@@ -1,5 +1,27 @@
 // RazorShield AI — API Service
-const API_BASE = '/api/v1';
+const RAW_API_URL = ((import.meta as any).env?.VITE_API_URL || '').trim();
+export const API_BASE = RAW_API_URL
+  ? RAW_API_URL.endsWith('/api/v1')
+    ? RAW_API_URL
+    : `${RAW_API_URL.replace(/\/+$/, '')}/api/v1`
+  : '/api/v1';
+
+export function getWebSocketUrl(): string {
+  const envWs = ((import.meta as any).env?.VITE_WS_URL || '').trim();
+  if (envWs) return envWs;
+
+  const envApi = ((import.meta as any).env?.VITE_API_URL || '').trim();
+  if (envApi) {
+    const wsBase = envApi.replace(/^http:/, 'ws:').replace(/^https:/, 'wss:').replace(/\/+$/, '');
+    return wsBase.endsWith('/api/v1')
+      ? `${wsBase}/ws/stream`
+      : `${wsBase}/api/v1/ws/stream`;
+  }
+
+  const isSecure = window.location.protocol === 'https:';
+  const host = window.location.hostname === 'localhost' ? 'localhost:8000' : window.location.host;
+  return `${isSecure ? 'wss:' : 'ws:'}//${host}/api/v1/ws/stream`;
+}
 
 export interface Alert {
   id: string;

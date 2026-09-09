@@ -1,5 +1,6 @@
 import { useState, useEffect, Fragment } from 'react';
 import { Search, ChevronDown, ChevronUp, Download, ShieldCheck, Lock } from 'lucide-react';
+import { API_BASE } from '../services/api';
 
 interface CryptographicAuditEntry {
   id: string;
@@ -22,7 +23,7 @@ export default function AuditTrail() {
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
   useEffect(() => {
-    fetch('/api/v1/audit/ledger')
+    fetch(`${API_BASE}/audit/ledger`)
       .then(res => res.json())
       .then(data => {
         if (data.ledger) {

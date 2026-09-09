@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Pause, Play, Search, X, Radio, Send, ShieldAlert, CheckCircle } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useWebSocket, type StreamTransaction } from '../services/useWebSocket';
+import { API_BASE } from '../services/api';
 
 interface Transaction {
   id: string;
@@ -104,7 +105,7 @@ export default function LiveActivity() {
     const amountPaise = isRisky ? 9500000 : 150000;
 
     try {
-      const res = await fetch('/api/v1/webhooks/razorpay', {
+      const res = await fetch(`${API_BASE}/webhooks/razorpay`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

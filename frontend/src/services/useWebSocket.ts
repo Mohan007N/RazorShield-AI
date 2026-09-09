@@ -1,4 +1,5 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
+import { getWebSocketUrl } from './api';
 
 export interface TelemetryData {
   events_per_sec: number;
@@ -62,9 +63,7 @@ export function useWebSocket(
 
   const connect = useCallback(() => {
     try {
-      const isSecure = window.location.protocol === 'https:';
-      const host = window.location.hostname === 'localhost' ? 'localhost:8000' : window.location.host;
-      const wsUrl = `${isSecure ? 'wss:' : 'ws:'}//${host}/api/v1/ws/stream`;
+      const wsUrl = getWebSocketUrl();
 
       const ws = new WebSocket(wsUrl);
       wsRef.current = ws;

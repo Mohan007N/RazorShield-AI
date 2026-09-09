@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Play, Square, Flame, Check, ShieldAlert, Cpu } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { API_BASE } from '../services/api';
 
 interface AttackProfile {
   id: string;
@@ -86,7 +87,7 @@ export default function FraudSimulator({ onAttackStateChange }: { onAttackStateC
 
     try {
       if (nextState) {
-        await fetch('/api/v1/simulator/start', {
+        await fetch(`${API_BASE}/simulator/start`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'X-API-Key': 'razorshield-dev-key' },
           body: JSON.stringify({
@@ -97,7 +98,7 @@ export default function FraudSimulator({ onAttackStateChange }: { onAttackStateC
           }),
         });
       } else {
-        await fetch('/api/v1/simulator/stop', {
+        await fetch(`${API_BASE}/simulator/stop`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'X-API-Key': 'razorshield-dev-key' },
         });

@@ -4,7 +4,7 @@ import {
   ToggleLeft, ToggleRight, Sparkles, UserCheck, ShieldCheck, Download,
   Sliders, ArrowDownRight, CheckCircle
 } from 'lucide-react';
-import { api, type InvestigationResult, type Alert } from '../services/api';
+import { api, API_BASE, type InvestigationResult, type Alert } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 
 interface AttackScenario {
@@ -124,7 +124,7 @@ export default function InvestigationPage() {
   const handleApprove = async () => {
     if (!result) return;
     try {
-      await fetch('/api/v1/test/approve-action', {
+      await fetch(`${API_BASE}/test/approve-action`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
