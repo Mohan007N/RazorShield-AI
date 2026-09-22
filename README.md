@@ -95,7 +95,7 @@ flowchart TD
 - **Analytics Worker**: Continuously aggregates merchant velocity metrics and recalibrates baseline models on a rolling schedule.
 - **Audit Worker**: Consumes audit events asynchronously and commits them with cryptographic sequence hashes to persistent storage.
 - **Investigation Agent (LangGraph)**: Multi-step orchestrator that queries merchant history, recent activity, device fingerprints, transaction patterns, and SHAP explanations before synthesizing structured findings.
-- **Policy Engine & Action Gate**: Enforces strict operational boundaries on autonomous agent output, preventing unauthorized financial or routing changes without verified human approval.
+- **Policy Engine & Action Gate**: Enforces strict operational boundaries on autonomous agent output, preventing unauthorized financial or routing changes without verified human approval..
 
 ---
 
